@@ -1,6 +1,6 @@
 {
-  "name": "@mmdevries/uws",
-  "version": "1.0.0",
+  "name": "uws",
+  "version": "1.0.1",
   "license": "MIT",
   "main": "./dist/uws.js",
   "description": "mmdevries/uws custom fork of uWebSockets 0.14",
