@@ -91,7 +91,7 @@ std::string ExtensionsNegotiator<isServer>::generateOffer() {
         }
 
         if (options & Options::SERVER_NO_CONTEXT_TAKEOVER) {
-            extensionsOffer += "; server_no_context_takeover";
+            //extensionsOffer += "; server_no_context_takeover";
         }
     }
 
