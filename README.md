@@ -1,4 +1,4 @@
-uws is a replacement module for ws which allows, but doesn't guarantee (certainly not when paired with Socket.IO), significant performance and memory-usage improvements. This module is specifically only compatible with Node.js.
+uws is a replacement module for ws which allows, but doesn't guarantee, significant performance and memory-usage improvements. This module is specifically only compatible with Node.js.
 
 Installation
 
