@@ -15,8 +15,8 @@ function abortConnection(socket, code, name) {
     socket.end('HTTP/1.1 ' + code + ' ' + name + '\r\n\r\n');
 }
 
-function emitConnection(self, ws) {
-    self.emit('connection', ws, _upgradeReq);
+function emitConnection(ws) {
+    this.emit('connection', ws, _upgradeReq);
 }
 
 function onServerMessage(message, webSocket) {
@@ -483,7 +483,7 @@ class Server extends EventEmitter {
             const webSocket = new WebSocket(external);
 
             native.setUserData(external, webSocket);
-            this._upgradeCallback(this, webSocket);
+            this._upgradeCallback(webSocket);
             _upgradeReq = null;
         });
 
@@ -516,7 +516,6 @@ class Server extends EventEmitter {
             }
         } else {
             const socketHandle = socket.ssl ? socket._parent._handle : socket._handle;
-            //const sslState = socket.ssl ? (socket.ssl._external || socket.ssl._secureContext.context._external) : null;
             const sslState = socket.ssl ? native.getSSLContext(socket.ssl) : null;
             if (socketHandle && secKey && secKey.length === 24) {
                 socket.setNoDelay(this._noDelay);
