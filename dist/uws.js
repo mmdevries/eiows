@@ -1,5 +1,7 @@
-'use strict';
+/* jshint esversion: 6 */
+/* jslint node: true, bitwise: true */
 
+'use strict';
 const http = require('http');
 const EventEmitter = require('events');
 const EE_ERROR = 'Registering more than one listener to a WebSocket is not supported.';
@@ -13,8 +15,8 @@ function abortConnection(socket, code, name) {
     socket.end('HTTP/1.1 ' + code + ' ' + name + '\r\n\r\n');
 }
 
-function emitConnection(ws) {
-    this.emit('connection', ws, _upgradeReq);
+function emitConnection(self, ws) {
+    self.emit('connection', ws, _upgradeReq);
 }
 
 function onServerMessage(message, webSocket) {
@@ -38,7 +40,7 @@ const native = (() => {
             throw new Error('µWebSockets requires Node.js 6.4.0 or greater on Windows.');
         } else {
             throw new Error('Compilation of µWebSockets has failed and there is no pre-compiled binary ' +
-            'available for your system. Please install a supported C++11 compiler and reinstall the module \'uws\'.');
+                'available for your system. Please install a supported C++11 compiler and reinstall the module \'uws\'.');
         }
     }
 })();
@@ -100,7 +102,9 @@ class WebSocket {
     set onmessage(f) {
         if (f) {
             this.internalOnMessage = (message) => {
-                f({data: message});
+                f({
+                    data: message
+                });
             };
         } else {
             this.internalOnMessage = noop;
@@ -118,7 +122,10 @@ class WebSocket {
     set onclose(f) {
         if (f) {
             this.internalOnClose = (code, message) => {
-                f({code: code, reason: message});
+                f({
+                    code: code,
+                    reason: message
+                });
             };
         } else {
             this.internalOnClose = noop;
@@ -283,7 +290,7 @@ class WebSocket {
 
     // from here down, functions are not common between client and server
 
-    ping(message, options, dontFailWhenClosed) {
+    ping(message) {
         if (this.external) {
             native.server.send(this.external, message, WebSocketClient.OPCODE_PING, false);
         }
@@ -329,7 +336,7 @@ class WebSocketClient extends WebSocket {
         native.connect(clientGroup, uri, this);
     }
 
-    ping(message, options, dontFailWhenClosed) {
+    ping(message) {
         if (this.external) {
             native.client.send(this.external, message, WebSocketClient.OPCODE_PING, false);
         }
@@ -408,7 +415,7 @@ class Server extends EventEmitter {
             }
 
             this.httpServer.on('upgrade', this._upgradeListener = ((request, socket, head) => {
-                if (!options.path || options.path == request.url.split('?')[0].split('#')[0]) {
+                if (!options.path || options.path === request.url.split('?')[0].split('#')[0]) {
                     if (options.verifyClient) {
                         const info = {
                             origin: request.headers.origin,
@@ -441,7 +448,7 @@ class Server extends EventEmitter {
                 }
             }));
 
-            this.httpServer.on('newListener', (eventName, listener) => {
+            this.httpServer.on('newListener', (eventName) => {
                 if (eventName === 'upgrade') {
                     this._lastUpgradeListener = false;
                 }
@@ -476,7 +483,7 @@ class Server extends EventEmitter {
             const webSocket = new WebSocket(external);
 
             native.setUserData(external, webSocket);
-            this._upgradeCallback(webSocket);
+            this._upgradeCallback(this, webSocket);
             _upgradeReq = null;
         });
 
@@ -484,18 +491,23 @@ class Server extends EventEmitter {
             if (options.host) {
                 this.httpServer.listen(options.port, options.host, () => {
                     this.emit('listening');
-                    callback && callback();
+                    if (callback) {
+                        callback();
+                    }
                 });
             } else {
                 this.httpServer.listen(options.port, () => {
                     this.emit('listening');
-                    callback && callback();
+                    if (callback) {
+                        callback();
+                    }
                 });
             }
         }
     }
 
     handleUpgrade(request, socket, upgradeHead, callback) {
+        const secKey = request.headers['sec-websocket-key'];
         if (socket._isNative) {
             if (this.serverGroup) {
                 _upgradeReq = request;
@@ -503,14 +515,13 @@ class Server extends EventEmitter {
                 native.upgrade(this.serverGroup, socket.external, secKey, request.headers['sec-websocket-extensions'], request.headers['sec-websocket-protocol']);
             }
         } else {
-            const secKey = request.headers['sec-websocket-key'];
             const socketHandle = socket.ssl ? socket._parent._handle : socket._handle;
             //const sslState = socket.ssl ? (socket.ssl._external || socket.ssl._secureContext.context._external) : null;
             const sslState = socket.ssl ? native.getSSLContext(socket.ssl) : null;
-            if (socketHandle && secKey && secKey.length == 24) {
+            if (socketHandle && secKey && secKey.length === 24) {
                 socket.setNoDelay(this._noDelay);
                 const ticket = native.transfer(socketHandle.fd === -1 ? socketHandle : socketHandle.fd, sslState);
-                socket.on('close', (error) => {
+                socket.on('close', () => {
                     if (this.serverGroup) {
                         _upgradeReq = request;
                         this._upgradeCallback = callback ? callback : noop;
@@ -558,7 +569,9 @@ class Server extends EventEmitter {
         if (this.serverGroup) {
             return {
                 length: native.server.group.getSize(this.serverGroup),
-                forEach: ((cb) => {native.server.group.forEach(this.serverGroup, cb)})
+                forEach: ((cb) => {
+                    native.server.group.forEach(this.serverGroup, cb);
+                })
             };
         }
     }
@@ -576,4 +589,5 @@ WebSocketClient.CLOSED = 0;
 WebSocketClient.Server = Server;
 WebSocketClient.http = native.httpServer;
 WebSocketClient.native = native;
+
 module.exports = WebSocketClient;
