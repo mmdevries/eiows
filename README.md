@@ -2,9 +2,9 @@ uws is a replacement module for ws which allows, but doesn't guarantee, signific
 
 Installation
 
-npm install mmdevries/uws#1.2.4
+npm install mmdevries/uws#1.2.5
 
 or
 
-yarn add mmdevries/uws#1.2.4
+yarn add mmdevries/uws#1.2.5
 
