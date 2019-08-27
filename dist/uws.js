@@ -508,28 +508,20 @@ class Server extends EventEmitter {
 
     handleUpgrade(request, socket, upgradeHead, callback) {
         const secKey = request.headers['sec-websocket-key'];
-        if (socket._isNative) {
-            if (this.serverGroup) {
-                _upgradeReq = request;
-                this._upgradeCallback = callback ? callback : noop;
-                native.upgrade(this.serverGroup, socket.external, secKey, request.headers['sec-websocket-extensions'], request.headers['sec-websocket-protocol']);
-            }
-        } else {
-            const socketHandle = socket.ssl ? socket._parent._handle : socket._handle;
+        const socketHandle = socket.ssl ? socket._parent._handle : socket._handle;
+        if (socketHandle && secKey && secKey.length === 24) {
             const sslState = socket.ssl ? native.getSSLContext(socket.ssl) : null;
-            if (socketHandle && secKey && secKey.length === 24) {
-                socket.setNoDelay(this._noDelay);
-                const ticket = native.transfer(socketHandle.fd === -1 ? socketHandle : socketHandle.fd, sslState);
-                socket.on('close', () => {
-                    if (this.serverGroup) {
-                        _upgradeReq = request;
-                        this._upgradeCallback = callback ? callback : noop;
-                        native.upgrade(this.serverGroup, ticket, secKey, request.headers['sec-websocket-extensions'], request.headers['sec-websocket-protocol']);
-                    }
-                });
-            }
-            socket.destroy();
+            socket.setNoDelay(this._noDelay);
+            const ticket = native.transfer(socketHandle.fd === -1 ? socketHandle : socketHandle.fd, sslState);
+            socket.on('close', () => {
+                if (this.serverGroup) {
+                    _upgradeReq = request;
+                    this._upgradeCallback = callback ? callback : noop;
+                    native.upgrade(this.serverGroup, ticket, secKey, request.headers['sec-websocket-extensions'], request.headers['sec-websocket-protocol']);
+                }
+            });
         }
+        socket.destroy();
     }
 
     broadcast(message, options) {
