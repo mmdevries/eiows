@@ -24,7 +24,7 @@ Example:
     var app = express();
     var server = https.createServer(ssl_options, app);
 
-    server.listen(443);
+    server.listen(1443);
 
     var io = require("socket.io")(server, {
         wsEngine: 'uws',
@@ -33,5 +33,10 @@ Example:
             serverNoContextTakeover: false /* Enables sliding window during zlib compression */
         }
     });
+
+    io.on("connection", function(socket) {
+        console.log('Yes, you did it!');
+    });
+
 
 Have fun!
