@@ -1,5 +1,5 @@
 uws is a replacement module for ws which allows, but doesn't guarantee, significant performance and memory-usage improvements. This module is specifically only compatible with Node.js.
-This package is mainly meant for projects which depend on the performance of the “original uws package” in combination with Socket.IO and Express and should work for Node 8, 10 and 12.
+This package is mainly meant for projects which depend on the performance of the “original uws package” in combination with Socket.IO and Express and it should work on Node 8, 10 and 12.
 
 Installation:
 
@@ -23,6 +23,9 @@ Example:
 
     var app = express();
     var server = https.createServer(ssl_options, app);
+
+    server.listen(443);
+
     var io = require("socket.io")(server, {
         wsEngine: 'uws',
         perMessageDeflate: {
