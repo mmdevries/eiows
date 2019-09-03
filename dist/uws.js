@@ -2,46 +2,18 @@
 /* jslint node: true, bitwise: true */
 
 'use strict';
-const http = require('http');
 const EventEmitter = require('events');
 const EE_ERROR = 'Registering more than one listener to a WebSocket is not supported.';
 const DEFAULT_PAYLOAD_LIMIT = 16777216;
 
-let _upgradeReq = null;
-
 function noop() {}
-
-function abortConnection(socket, code, name) {
-    socket.end('HTTP/1.1 ' + code + ' ' + name + '\r\n\r\n');
-}
-
-function emitConnection(ws) {
-    this.emit('connection', ws, _upgradeReq);
-}
-
-function onServerMessage(message, webSocket) {
-    webSocket.internalOnMessage(message);
-}
 
 const native = (() => {
     try {
-        try {
-            return process.binding('uws_builtin');
-        } catch (e) {
-            return require(`./uws_${process.platform}_${process.versions.modules}`);
-        }
+        return require(`./uws_${process.platform}_${process.versions.modules}`);
     } catch (e) {
-        const version = process.version.substring(1).split('.').map(function(n) {
-            return parseInt(n);
-        });
-        const lessThanSixFour = version[0] < 6 || (version[0] === 6 && version[1] < 4);
-
-        if (process.platform === 'win32' && lessThanSixFour) {
-            throw new Error('µWebSockets requires Node.js 6.4.0 or greater on Windows.');
-        } else {
-            throw new Error('Compilation of µWebSockets has failed and there is no pre-compiled binary ' +
-                'available for your system. Please install a supported C++11 compiler and reinstall the module \'uws\'.');
-        }
+        throw new Error('Compilation of µWebSockets has failed and there is no pre-compiled binary ' +
+            'available for your system. Please install a supported C++11 compiler and reinstall the module \'uws\'.');
     }
 })();
 
@@ -93,10 +65,6 @@ class WebSocket {
         this.internalOnClose = noop;
         this.onping = noop;
         this.onpong = noop;
-    }
-
-    get upgradeReq() {
-        return _upgradeReq;
     }
 
     set onmessage(f) {
@@ -375,15 +343,11 @@ class WebSocketClient extends WebSocket {
 }
 
 class Server extends EventEmitter {
-    constructor(options, callback) {
+    constructor(options) {
         super();
 
         if (!options) {
             throw new TypeError('missing options');
-        }
-
-        if (options.port === undefined && !options.server && !options.noServer) {
-            throw new TypeError('invalid options');
         }
 
         var nativeOptions = 0;
@@ -399,77 +363,19 @@ class Server extends EventEmitter {
 
         // can these be made private?
         this._upgradeCallback = noop;
-        this._upgradeListener = null;
         this._noDelay = options.noDelay === undefined ? true : options.noDelay;
-        this._lastUpgradeListener = true;
-        this._passedHttpServer = options.server;
-
-        if (!options.noServer) {
-            this.httpServer = options.server ? options.server : http.createServer((request, response) => {
-                // todo: default HTTP response
-                response.end();
-            });
-
-            if (options.path && (!options.path.length || options.path[0] !== '/')) {
-                options.path = '/' + options.path;
-            }
-
-            this.httpServer.on('upgrade', this._upgradeListener = ((request, socket, head) => {
-                if (!options.path || options.path === request.url.split('?')[0].split('#')[0]) {
-                    if (options.verifyClient) {
-                        const info = {
-                            origin: request.headers.origin,
-                            secure: request.connection.authorized !== undefined || request.connection.encrypted !== undefined,
-                            req: request
-                        };
-
-                        if (options.verifyClient.length === 2) {
-                            options.verifyClient(info, (result, code, name) => {
-                                if (result) {
-                                    this.handleUpgrade(request, socket, head, emitConnection);
-                                } else {
-                                    abortConnection(socket, code, name);
-                                }
-                            });
-                        } else {
-                            if (options.verifyClient(info)) {
-                                this.handleUpgrade(request, socket, head, emitConnection);
-                            } else {
-                                abortConnection(socket, 400, 'Client verification failed');
-                            }
-                        }
-                    } else {
-                        this.handleUpgrade(request, socket, head, emitConnection);
-                    }
-                } else {
-                    if (this._lastUpgradeListener) {
-                        abortConnection(socket, 400, 'URL not supported');
-                    }
-                }
-            }));
-
-            this.httpServer.on('newListener', (eventName) => {
-                if (eventName === 'upgrade') {
-                    this._lastUpgradeListener = false;
-                }
-            });
-
-            this.httpServer.on('error', (err) => {
-                this.emit('error', err);
-            });
-        }
 
         native.server.group.onDisconnection(this.serverGroup, (external, code, message, webSocket) => {
             webSocket.external = null;
-
             process.nextTick(() => {
                 webSocket.internalOnClose(code, message);
             });
-
             native.clearUserData(external);
         });
 
-        native.server.group.onMessage(this.serverGroup, onServerMessage);
+        native.server.group.onMessage(this.serverGroup, (message, webSocket) => {
+            webSocket.internalOnMessage(message);
+        });
 
         native.server.group.onPing(this.serverGroup, (message, webSocket) => {
             webSocket.onping(message);
@@ -481,29 +387,9 @@ class Server extends EventEmitter {
 
         native.server.group.onConnection(this.serverGroup, (external) => {
             const webSocket = new WebSocket(external);
-
             native.setUserData(external, webSocket);
             this._upgradeCallback(webSocket);
-            _upgradeReq = null;
         });
-
-        if (options.port !== undefined) {
-            if (options.host) {
-                this.httpServer.listen(options.port, options.host, () => {
-                    this.emit('listening');
-                    if (callback) {
-                        callback();
-                    }
-                });
-            } else {
-                this.httpServer.listen(options.port, () => {
-                    this.emit('listening');
-                    if (callback) {
-                        callback();
-                    }
-                });
-            }
-        }
     }
 
     handleUpgrade(request, socket, upgradeHead, callback) {
@@ -515,8 +401,7 @@ class Server extends EventEmitter {
             const ticket = native.transfer(socketHandle.fd === -1 ? socketHandle : socketHandle.fd, sslState);
             socket.on('close', () => {
                 if (this.serverGroup) {
-                    _upgradeReq = request;
-                    this._upgradeCallback = callback ? callback : noop;
+                    this._upgradeCallback = callback;
                     native.upgrade(this.serverGroup, ticket, secKey, request.headers['sec-websocket-extensions'], request.headers['sec-websocket-protocol']);
                 }
             });
@@ -537,21 +422,13 @@ class Server extends EventEmitter {
     }
 
     close(cb) {
-        if (this._upgradeListener && this.httpServer) {
-            this.httpServer.removeListener('upgrade', this._upgradeListener);
-
-            if (!this._passedHttpServer) {
-                this.httpServer.close();
-            }
-        }
-
         if (this.serverGroup) {
             native.server.group.close(this.serverGroup);
             this.serverGroup = null;
         }
 
         if (typeof cb === 'function') {
-            // compatibility hack, 15 seconds timeout
+            // compatibility hack, 20 seconds timeout
             setTimeout(cb, 20000);
         }
     }
@@ -570,15 +447,12 @@ class Server extends EventEmitter {
 
 WebSocketClient.PERMESSAGE_DEFLATE = 1;
 WebSocketClient.SLIDING_DEFLATE_WINDOW = 16;
-//WebSocketClient.SERVER_NO_CONTEXT_TAKEOVER = 2;
-//WebSocketClient.CLIENT_NO_CONTEXT_TAKEOVER = 4;
 WebSocketClient.OPCODE_TEXT = 1;
 WebSocketClient.OPCODE_BINARY = 2;
 WebSocketClient.OPCODE_PING = 9;
 WebSocketClient.OPEN = 1;
 WebSocketClient.CLOSED = 0;
 WebSocketClient.Server = Server;
-WebSocketClient.http = native.httpServer;
 WebSocketClient.native = native;
 
 module.exports = WebSocketClient;
