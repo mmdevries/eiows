@@ -249,32 +249,32 @@ public:
 
     struct CloseFrame {
         uint16_t code;
-        char *message;
+        char const *message;
         size_t length;
     };
 
     static inline CloseFrame parseClosePayload(char *src, size_t length) {
-        CloseFrame cf = {};
+        CloseFrame cf = {code: 0, message: "", length: 0};
         if (length >= 2) {
             memcpy(&cf.code, src, 2);
             cf = {ntohs(cf.code), src + 2, length - 2};
-	    if (!isValidUtf8((unsigned char *) cf.message, cf.length)){
-	        // this actually should be an error
-	        return {};
-	    }
+	        if (!isValidUtf8((unsigned char *) cf.message, cf.length)){
+	            // this actually should be an error
+	            return {};
+	        }
 
-	    if (!((cf.code >= 1000 &&
-	          cf.code <= 1013 &&
-	          cf.code != 1004 &&
-	          cf.code != 1005 &&
-	          cf.code != 1006)
-	       || (cf.code >= 3000 && cf.code <= 4999))) {
-	        // this actually should be an error
-	        return {};
-	    }
-	} else {
-	    // if there was no code then we assume it was not provided
-	    cf = {code: 1005};
+	        if (!((cf.code >= 1000 &&
+	              cf.code <= 1013 &&
+	              cf.code != 1004 &&
+	              cf.code != 1005 &&
+	              cf.code != 1006)
+	           || (cf.code >= 3000 && cf.code <= 4999))) {
+	            // this actually should be an error
+	            return {};
+	        }
+    	} else {
+    	    // if there was no code then we assume it was not provided
+    	    cf = {code: 1005, message: "", length: 0};
         }
         return cf;
     }
