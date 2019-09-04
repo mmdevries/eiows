@@ -130,10 +130,12 @@ inline uWS::WebSocket<isServer> *unwrapSocket(Local<External> external) {
 
 inline Local<Value> wrapMessage(const char *message, size_t length,
                                 uWS::OpCode opCode, Isolate *isolate) {
-  return opCode == uWS::OpCode::BINARY
-             ? (Local<Value>)ArrayBuffer::New(isolate, (char *)message, length)
-             : (Local<Value>)String::NewFromUtf8(isolate, message,
-                                                 String::kNormalString, length);
+  if (opCode == uWS::OpCode::BINARY) {
+      return  (Local<Value>)ArrayBuffer::New(isolate, (char *)message, length);
+  } else {
+      MaybeLocal<String> messageSt = String::NewFromUtf8(isolate, message, NewStringType::kNormal, length);
+      return (Local<Value>)messageSt.ToLocalChecked();
+  }
 }
 
 template <bool isServer>
@@ -175,10 +177,13 @@ template <bool isServer>
 void getAddress(const FunctionCallbackInfo<Value> &args) {
   typename uWS::WebSocket<isServer>::Address address =
       unwrapSocket<isServer>(args[0].As<External>())->getAddress();
-  Local<Array> array = Array::New(args.GetIsolate(), 3);
-  array->Set(0, Integer::New(args.GetIsolate(), address.port));
-  array->Set(1, String::NewFromUtf8(args.GetIsolate(), address.address));
-  array->Set(2, String::NewFromUtf8(args.GetIsolate(), address.family));
+  Isolate *isolate = args.GetIsolate();
+  MaybeLocal<String> addressSt = String::NewFromUtf8(isolate, address.address, NewStringType::kNormal);
+  MaybeLocal<String> familySt = String::NewFromUtf8(isolate, address.family, NewStringType::kNormal);
+  Local<Array> array = Array::New(isolate, 3);
+  array->Set(0, Integer::New(isolate, address.port));
+  array->Set(1, addressSt.ToLocalChecked());
+  array->Set(2, familySt.ToLocalChecked());
   args.GetReturnValue().Set(array);
 }
 
@@ -531,8 +536,9 @@ void startAutoPing(const FunctionCallbackInfo<Value> &args) {
 void getSSLContext(const FunctionCallbackInfo<Value> &args) {
     Isolate* isolate = args.GetIsolate();
     if(args.Length() < 1 || !args[0]->IsObject()){
+      MaybeLocal<String> msgSt = String::NewFromUtf8(isolate, "Error: One object expected", NewStringType::kNormal);
       isolate->ThrowException(Exception::TypeError(
-      String::NewFromUtf8(isolate, "Error: One object expected")));
+      msgSt.ToLocalChecked()));
       return;
     }
     Local<Context> context = isolate->GetCurrentContext();
@@ -591,6 +597,7 @@ struct Namespace {
     NODE_SET_METHOD(group, "terminate", terminateGroup<isServer>);
     NODE_SET_METHOD(group, "broadcast", broadcast<isServer>);
 
-    object->Set(String::NewFromUtf8(isolate, "group"), group);
+    MaybeLocal<String> groupSt = String::NewFromUtf8(isolate, "group", NewStringType::kNormal);
+    object->Set(groupSt.ToLocalChecked(), group);
   }
 };

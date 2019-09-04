@@ -5,8 +5,10 @@ void Main(Local<Object> exports)
 {
   Isolate *isolate = exports->GetIsolate();
 
-  exports->Set(String::NewFromUtf8(isolate, "server"), Namespace<uWS::SERVER>(isolate).object);
-  exports->Set(String::NewFromUtf8(isolate, "client"), Namespace<uWS::CLIENT>(isolate).object);
+  MaybeLocal<String> serverSt = String::NewFromUtf8(isolate, "server", NewStringType::kNormal);
+  MaybeLocal<String> clientSt = String::NewFromUtf8(isolate, "client", NewStringType::kNormal);
+  exports->Set(serverSt.ToLocalChecked(), Namespace<uWS::SERVER>(isolate).object);
+  exports->Set(clientSt.ToLocalChecked(), Namespace<uWS::CLIENT>(isolate).object);
 
   NODE_SET_METHOD(exports, "getSSLContext", getSSLContext);
   NODE_SET_METHOD(exports, "setUserData", setUserData<uWS::SERVER>);
