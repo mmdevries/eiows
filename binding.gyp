@@ -54,7 +54,7 @@
             'type': 'none',
             'dependencies': ['uws'],
             'conditions': [
-                ['OS!="win"', {
+                ['OS!="win" && OS!="linux"', {
                     'actions': [
                         {
                             'action_name': 'move_lib',
