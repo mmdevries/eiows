@@ -54,7 +54,21 @@
             'type': 'none',
             'dependencies': ['uws'],
             'conditions': [
-                ['OS!="win" && OS!="linux"', {
+                ['OS=="freebsd"', {
+                    'actions': [
+                        {
+                            'action_name': 'move_lib',
+                            'inputs': [
+                                '<@(PRODUCT_DIR)/uws.node'
+                            ],
+                            'outputs': [
+                                'uws'
+                            ],
+                            'action': ['cp', '<@(PRODUCT_DIR)/uws.node', 'dist/uws_<!@(node -p process.platform)_<!@(node -p process.versions.modules).node']
+                        }
+                    ]}
+                 ],
+                ['OS=="mac"', {
                     'actions': [
                         {
                             'action_name': 'move_lib',
