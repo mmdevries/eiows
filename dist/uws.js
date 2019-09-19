@@ -12,7 +12,7 @@ const native = (() => {
     try {
         return require(`./uws_${process.platform}_${process.versions.modules}`);
     } catch (e) {
-        throw new Error('Compilation of µWebSockets has failed and there is no pre-compiled binary ' +
+        throw new Error(e.toString() + '\n\nCompilation of µWebSockets has failed and there is no correct pre-compiled binary ' +
             'available for your system. Please install a supported C++11 compiler and reinstall the module \'uws\'.');
     }
 })();

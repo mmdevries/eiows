@@ -16,7 +16,7 @@
             ],
             'conditions': [
                 ['OS=="linux"', {
-                    'cflags_cc': ['-std=c++11', '-DUSE_LIBUV'],
+                    'cflags_cc': ['-std=c++14', '-DUSE_LIBUV'],
                     'cflags_cc!': ['-fno-exceptions', '-std=gnu++11', '-fno-rtti'],
                     'cflags!': ['-fno-omit-frame-pointer'],
                     'ldflags!': ['-rdynamic'],
@@ -54,21 +54,7 @@
             'type': 'none',
             'dependencies': ['uws'],
             'conditions': [
-                ['OS=="freebsd"', {
-                    'actions': [
-                        {
-                            'action_name': 'move_lib',
-                            'inputs': [
-                                '<@(PRODUCT_DIR)/uws.node'
-                            ],
-                            'outputs': [
-                                'uws'
-                            ],
-                            'action': ['cp', '<@(PRODUCT_DIR)/uws.node', 'dist/uws_<!@(node -p process.platform)_<!@(node -p process.versions.modules).node']
-                        }
-                    ]}
-                 ],
-                ['OS=="mac"', {
+                ['OS!="win"', {
                     'actions': [
                         {
                             'action_name': 'move_lib',
