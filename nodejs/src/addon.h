@@ -8,16 +8,13 @@
 #if NODE_MAJOR_VERSION>=10
 #define NODE_WANT_INTERNALS 1
 #if NODE_MAJOR_VERSION==10
-  #include "node_10_headers/async_wrap.h"
   #include "node_10_headers/tls_wrap.h"
 #endif
 #if NODE_MAJOR_VERSION==12
-  #include "node_12_headers/async_wrap.h"
   #include "node_12_headers/tls_wrap.h"
 #endif
 using BaseObject = node::BaseObject;
 using TLSWrap = node::TLSWrap;
-using SecureContext = node::crypto::SecureContext;
 class TLSWrapSSLGetter : public node::TLSWrap {
 public:
     void setSSL(const v8::FunctionCallbackInfo<v8::Value> &info){
