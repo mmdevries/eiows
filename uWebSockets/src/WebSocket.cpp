@@ -150,9 +150,9 @@ void WebSocket<isServer>::sendPrepared(typename WebSocket<isServer>::PreparedMes
     messagePtr->data = preparedMessage->buffer;
     messagePtr->length = preparedMessage->length;
 
-    bool wasTransferred;
-    if (write(messagePtr, wasTransferred)) {
-        if (!wasTransferred) {
+    bool waiting;
+    if (write(messagePtr, waiting)) {
+        if (!waiting) {
             nodeData->freeSmallMemoryBlock((char *) messagePtr, memoryIndex);
             if (callback) {
                 callback(this, preparedMessage, false, callbackData);

@@ -257,9 +257,9 @@ void HttpSocket<isServer>::upgrade(const char *secKey, const char *extensions, s
         httpBuffer.clear();
     }
 
-    bool wasTransferred;
-    if (write(messagePtr, wasTransferred)) {
-        if (!wasTransferred) {
+    bool waiting;
+    if (write(messagePtr, waiting)) {
+        if (!waiting) {
             freeMessage(messagePtr);
         } else {
             messagePtr->callback = nullptr;

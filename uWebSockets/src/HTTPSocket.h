@@ -228,9 +228,9 @@ struct HttpResponse {
                 while (messagePtr) {
                     HttpSocket<true>::Queue::Message *nextMessage = messagePtr->nextMessage;
 
-                    bool wasTransferred;
-                    if (httpSocket->write(messagePtr, wasTransferred)) {
-                        if (!wasTransferred) {
+                    bool waiting;
+                    if (httpSocket->write(messagePtr, waiting)) {
+                        if (!waiting) {
                             httpSocket->freeMessage(messagePtr);
                             if (callback) {
                                 callback(this, callbackData, false, nullptr);

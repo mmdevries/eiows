@@ -301,14 +301,14 @@ protected:
         delete [] (char *) message;
     }
 
-    bool write(Queue::Message *message, bool &wasTransferred) {
+    bool write(Queue::Message *message, bool &waiting) {
         ssize_t sent = 0;
         if (messageQueue.empty()) {
 
             if (ssl) {
                 sent = SSL_write(ssl, message->data, (int) message->length);
                 if (sent == (ssize_t) message->length) {
-                    wasTransferred = false;
+                    waiting = false;
                     return true;
                 } else if (sent < 0) {
                     switch (SSL_get_error(ssl, (int) sent)) {
@@ -327,7 +327,7 @@ protected:
             } else {
                 sent = ::send(getFd(), message->data, message->length, MSG_NOSIGNAL);
                 if (sent == (ssize_t) message->length) {
-                    wasTransferred = false;
+                    waiting = false;
                     return true;
                 } else if (sent == SOCKET_ERROR) {
                     if (!nodeData->netContext->wouldBlock()) {
@@ -345,7 +345,7 @@ protected:
             }
         }
         messageQueue.push(message);
-        wasTransferred = true;
+        waiting = true;
         return true;
     }
 
@@ -362,9 +362,9 @@ protected:
                 messagePtr->data = ((char *) messagePtr) + sizeof(Queue::Message);
                 messagePtr->length = T::transform(message, (char *) messagePtr->data, length, transformData);
 
-                bool wasTransferred;
-                if (write(messagePtr, wasTransferred)) {
-                    if (!wasTransferred) {
+                bool waiting;
+                if (write(messagePtr, waiting)) {
+                    if (!waiting) {
                         nodeData->freeSmallMemoryBlock((char *) messagePtr, memoryIndex);
                         if (callback) {
                             callback(this, callbackData, false, nullptr);
@@ -383,9 +383,9 @@ protected:
                 Queue::Message *messagePtr = allocMessage(estimatedLength - sizeof(Queue::Message));
                 messagePtr->length = T::transform(message, (char *) messagePtr->data, length, transformData);
 
-                bool wasTransferred;
-                if (write(messagePtr, wasTransferred)) {
-                    if (!wasTransferred) {
+                bool waiting;
+                if (write(messagePtr, waiting)) {
+                    if (!waiting) {
                         freeMessage(messagePtr);
                         if (callback) {
                             callback(this, callbackData, false, nullptr);
