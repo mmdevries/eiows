@@ -44,8 +44,8 @@ void registerCheck(Isolate *isolate) {
   uv_check_start(&check, [](uv_check_t *check) {
     Isolate *isolate = (Isolate *)check->data;
     HandleScope hs(isolate);
-    Local<Function>::New(isolate, noop)
-        ->Call(isolate->GetCurrentContext(), Null(isolate), 0, nullptr);
+    node::MakeCallback(isolate, isolate->GetCurrentContext()->Global(),
+                       Local<Function>::New(isolate, noop), 0, nullptr);
   });
   uv_unref((uv_handle_t *)&check);
 }
@@ -212,8 +212,9 @@ void sendCallback(uWS::WebSocket<isServer> *webSocket, void *data,
   SendCallbackData *sc = (SendCallbackData *)data;
   if (!cancelled) {
     HandleScope hs(sc->isolate);
-    Local<Function>::New(sc->isolate, sc->jsCallback)
-        ->Call(sc->isolate->GetCurrentContext(), Null(sc->isolate), 0, nullptr);
+    node::MakeCallback(sc->isolate, sc->isolate->GetCurrentContext()->Global(),
+                       Local<Function>::New(sc->isolate, sc->jsCallback), 0,
+                       nullptr);
   }
   sc->jsCallback.Reset();
   delete sc;
@@ -323,8 +324,9 @@ void onConnection(const FunctionCallbackInfo<Value> &args) {
         groupData->size++;
         HandleScope hs(isolate);
         Local<Value> argv[] = {wrapSocket(webSocket, isolate)};
-        Local<Function>::New(isolate, *connectionCallback)
-            ->Call(isolate->GetCurrentContext(), Null(isolate), 1, argv);
+        node::MakeCallback(isolate, isolate->GetCurrentContext()->Global(),
+                           Local<Function>::New(isolate, *connectionCallback),
+                           1, argv);
       });
 }
 
@@ -369,8 +371,8 @@ void onPing(const FunctionCallbackInfo<Value> &args) {
     Local<Value> argv[] = {
         wrapMessage(message, length, uWS::OpCode::PING, isolate),
         getDataV8(webSocket, isolate)};
-    Local<Function>::New(isolate, *pingCallback)
-        ->Call(isolate->GetCurrentContext(), Null(isolate), 2, argv);
+    node::MakeCallback(isolate, isolate->GetCurrentContext()->Global(),
+                       Local<Function>::New(isolate, *pingCallback), 2, argv);
   });
 }
 
@@ -389,8 +391,8 @@ void onPong(const FunctionCallbackInfo<Value> &args) {
     Local<Value> argv[] = {
         wrapMessage(message, length, uWS::OpCode::PONG, isolate),
         getDataV8(webSocket, isolate)};
-    Local<Function>::New(isolate, *pongCallback)
-        ->Call(isolate->GetCurrentContext(), Null(isolate), 2, argv);
+    node::MakeCallback(isolate, isolate->GetCurrentContext()->Global(),
+                       Local<Function>::New(isolate, *pongCallback), 2, argv);
   });
 }
 
@@ -414,8 +416,9 @@ void onDisconnection(const FunctionCallbackInfo<Value> &args) {
         wrapSocket(webSocket, isolate), Integer::New(isolate, code),
         wrapMessage(message, length, uWS::OpCode::CLOSE, isolate),
         getDataV8(webSocket, isolate)};
-    Local<Function>::New(isolate, *disconnectionCallback)
-        ->Call(isolate->GetCurrentContext(), Null(isolate), 4, argv);
+    node::MakeCallback(isolate, isolate->GetCurrentContext()->Global(),
+                       Local<Function>::New(isolate, *disconnectionCallback), 4,
+                       argv);
   });
 }
 
@@ -432,8 +435,8 @@ void onError(const FunctionCallbackInfo<Value> &args) {
     HandleScope hs(isolate);
     Local<Value> argv[] = {
         Local<Value>::New(isolate, *(Persistent<Value> *)user)};
-    Local<Function>::New(isolate, *errorCallback)
-        ->Call(isolate->GetCurrentContext(), Null(isolate), 1, argv);
+    node::MakeCallback(isolate, isolate->GetCurrentContext()->Global(),
+                       Local<Function>::New(isolate, *errorCallback), 1, argv);
 
     ((Persistent<Value> *)user)->Reset();
     delete (Persistent<Value> *)user;
