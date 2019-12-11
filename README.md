@@ -3,11 +3,11 @@ This package is mainly meant for projects which depend on the performance of the
 
 Installation:
 
-npm install mmdevries/uws#2.3.2
+npm install mmdevries/uws#2.3.3
 
 or
 
-yarn add mmdevries/uws#2.3.2
+yarn add mmdevries/uws#2.3.3
 
 
 Example:
@@ -30,7 +30,7 @@ Example:
         wsEngine: 'uws',
         perMessageDeflate: {
             threshold: 32768,
-            serverNoContextTakeover: false /* Enables sliding window during zlib compression */
+            serverNoContextTakeover: false
         }
     });
 
