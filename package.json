@@ -1,6 +1,6 @@
 {
   "name": "uws",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "license": "MIT",
   "main": "./dist/uws.js",
   "description": "mmdevries/uws custom fork of uWebSockets 0.14",
@@ -8,7 +8,7 @@
     "install": "node-gyp rebuild > build_log.txt 2>&1 || exit 0"
   },
   "engines": {
-    "node": ">=8.12.0 <13.0"
+    "node": ">=8.12.0 <14.0"
   },
   "keywords": [
     "tiny",
