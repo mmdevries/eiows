@@ -7,17 +7,11 @@
 
 #if NODE_MAJOR_VERSION>=10
 #define NODE_WANT_INTERNALS 1
-#if NODE_MAJOR_VERSION==10
-  #include "node_10_headers/tls_wrap.h"
-#endif
-#if NODE_MAJOR_VERSION==12
-  #include "node_12_headers/tls_wrap.h"
-#endif
-#if NODE_MAJOR_VERSION==13
-  #include "node_13_headers/tls_wrap.h"
-#endif
+#include "node_10+_headers/async_wrap.h"
+#include "node_10+_headers/tls_wrap.h"
 using BaseObject = node::BaseObject;
 using TLSWrap = node::TLSWrap;
+using SecureContext = node::crypto::SecureContext;
 class TLSWrapSSLGetter : public node::TLSWrap {
 public:
     void setSSL(const v8::FunctionCallbackInfo<v8::Value> &info){
@@ -113,8 +107,6 @@ void createGroup(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(External::New(args.GetIsolate(), group));
 }
 
-// TODO: This is never called by the js wrapper,
-//       not sure if this is a potential memory leak.
 template <bool isServer>
 void deleteGroup(const FunctionCallbackInfo<Value> &args) {
   uWS::Group<isServer> *group =
@@ -136,12 +128,10 @@ inline uWS::WebSocket<isServer> *unwrapSocket(Local<External> external) {
 
 inline Local<Value> wrapMessage(const char *message, size_t length,
                                 uWS::OpCode opCode, Isolate *isolate) {
-  if (opCode == uWS::OpCode::BINARY) {
-      return  (Local<Value>)ArrayBuffer::New(isolate, (char *)message, length);
-  } else {
-      MaybeLocal<String> messageSt = String::NewFromUtf8(isolate, message, NewStringType::kNormal, length);
-      return (Local<Value>)messageSt.ToLocalChecked();
-  }
+  return opCode == uWS::OpCode::BINARY
+             ? (Local<Value>)ArrayBuffer::New(isolate, (char *)message, length)
+             : (Local<Value>)String::NewFromUtf8(isolate, message,
+                                                 String::kNormalString, length);
 }
 
 template <bool isServer>
@@ -183,19 +173,10 @@ template <bool isServer>
 void getAddress(const FunctionCallbackInfo<Value> &args) {
   typename uWS::WebSocket<isServer>::Address address =
       unwrapSocket<isServer>(args[0].As<External>())->getAddress();
-  Isolate *isolate = args.GetIsolate();
-  Local<Array> array = Array::New(isolate, 3);
-#if NODE_MAJOR_VERSION >= 13
-  array->Set(isolate->GetCurrentContext(), 0, Integer::New(isolate, address.port));
-  array->Set(isolate->GetCurrentContext(), 1, String::NewFromUtf8(isolate, address.address).ToLocalChecked());
-  array->Set(isolate->GetCurrentContext(), 2, String::NewFromUtf8(isolate, address.family).ToLocalChecked());
-#else
-  MaybeLocal<String> addressSt = String::NewFromUtf8(isolate, address.address, NewStringType::kNormal);
-  MaybeLocal<String> familySt = String::NewFromUtf8(isolate, address.family, NewStringType::kNormal);
-  array->Set(0, Integer::New(isolate, address.port));
-  array->Set(1, addressSt.ToLocalChecked());
-  array->Set(2, familySt.ToLocalChecked());
-#endif
+  Local<Array> array = Array::New(args.GetIsolate(), 3);
+  array->Set(0, Integer::New(args.GetIsolate(), address.port));
+  array->Set(1, String::NewFromUtf8(args.GetIsolate(), address.address));
+  array->Set(2, String::NewFromUtf8(args.GetIsolate(), address.family));
   args.GetReturnValue().Set(array);
 }
 
@@ -551,9 +532,8 @@ void startAutoPing(const FunctionCallbackInfo<Value> &args) {
 void getSSLContext(const FunctionCallbackInfo<Value> &args) {
     Isolate* isolate = args.GetIsolate();
     if(args.Length() < 1 || !args[0]->IsObject()){
-      MaybeLocal<String> msgSt = String::NewFromUtf8(isolate, "Error: One object expected", NewStringType::kNormal);
       isolate->ThrowException(Exception::TypeError(
-      msgSt.ToLocalChecked()));
+      String::NewFromUtf8(isolate, "Error: One object expected")));
       return;
     }
     Local<Context> context = isolate->GetCurrentContext();
@@ -612,11 +592,6 @@ struct Namespace {
     NODE_SET_METHOD(group, "terminate", terminateGroup<isServer>);
     NODE_SET_METHOD(group, "broadcast", broadcast<isServer>);
 
-#if NODE_MAJOR_VERSION >= 13
-    object->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "group").ToLocalChecked(), group);
-#else
-    MaybeLocal<String> groupSt = String::NewFromUtf8(isolate, "group", NewStringType::kNormal);
-    object->Set(groupSt.ToLocalChecked(), group);
-#endif
+    object->Set(String::NewFromUtf8(isolate, "group"), group);
   }
 };
