@@ -406,7 +406,9 @@ class Server extends EventEmitter {
                 }
             });
         }
-        socket.destroy();
+        setTimeout(function() {
+            socket.destroy();
+        }, 0);
     }
 
     broadcast(message, options) {
