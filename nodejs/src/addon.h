@@ -137,7 +137,8 @@ inline uWS::WebSocket<isServer> *unwrapSocket(Local<External> external) {
 inline Local<Value> wrapMessage(const char *message, size_t length,
                                 uWS::OpCode opCode, Isolate *isolate) {
   if (opCode == uWS::OpCode::BINARY) {
-      return  (Local<Value>)ArrayBuffer::New(isolate, (char *)message, length);
+      MaybeLocal<Object> data = node::Buffer::Copy(isolate, (char *)message, length);
+      return  (Local<Value>)data.ToLocalChecked();
   } else {
       MaybeLocal<String> messageSt = String::NewFromUtf8(isolate, message, NewStringType::kNormal, length);
       return (Local<Value>)messageSt.ToLocalChecked();
