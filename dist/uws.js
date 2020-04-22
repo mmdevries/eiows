@@ -366,8 +366,8 @@ class Server extends EventEmitter {
         this._noDelay = options.noDelay === undefined ? true : options.noDelay;
 
         native.server.group.onDisconnection(this.serverGroup, (external, code, message, webSocket) => {
-            webSocket.external = null;
-            process.nextTick(() => {
+            setImmediate(() => {
+                webSocket.external = null;
                 webSocket.internalOnClose(code, message);
             });
             native.clearUserData(external);
@@ -392,6 +392,10 @@ class Server extends EventEmitter {
         });
     }
 
+    abortConnection(socket, code, message) {
+        return socket.end(`HTTP/1.1 ${code} ${message}\r\n\r\n`);
+    }
+
     handleUpgrade(request, socket, upgradeHead, callback) {
         const secKey = request.headers['sec-websocket-key'];
         const socketHandle = socket.ssl ? socket._parent._handle : socket._handle;
@@ -405,10 +409,12 @@ class Server extends EventEmitter {
                     native.upgrade(this.serverGroup, ticket, secKey, request.headers['sec-websocket-extensions'], request.headers['sec-websocket-protocol']);
                 }
             });
+            setTimeout(() => {
+                socket.destroy();
+            }, 0);
+        } else {
+            return this.abortConnection(socket, 400, 'Bad Request');
         }
-        setTimeout(function() {
-            socket.destroy();
-        }, 0);
     }
 
     broadcast(message, options) {
