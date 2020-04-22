@@ -393,24 +393,22 @@ class Server extends EventEmitter {
     }
 
     handleUpgrade(request, socket, upgradeHead, callback) {
-        setImmediate(function() {
-            const secKey = request.headers['sec-websocket-key'];
-            const socketHandle = socket.ssl ? socket._parent._handle : socket._handle;
-            if (socketHandle && secKey && secKey.length === 24) {
-                const sslState = socket.ssl ? native.getSSLContext(socket.ssl) : null;
-                socket.setNoDelay(this._noDelay);
-                const ticket = native.transfer(socketHandle.fd === -1 ? socketHandle : socketHandle.fd, sslState);
-                socket.on('close', () => {
-                    if (this.serverGroup) {
-                        this._upgradeCallback = callback;
-                        native.upgrade(this.serverGroup, ticket, secKey, request.headers['sec-websocket-extensions'], request.headers['sec-websocket-protocol']);
-                    }
-                });
-            }
-            setTimeout(function() {
-                socket.destroy();
-            }, 0);
-        });
+        const secKey = request.headers['sec-websocket-key'];
+        const socketHandle = socket.ssl ? socket._parent._handle : socket._handle;
+        if (socketHandle && secKey && secKey.length === 24) {
+            const sslState = socket.ssl ? native.getSSLContext(socket.ssl) : null;
+            socket.setNoDelay(this._noDelay);
+            const ticket = native.transfer(socketHandle.fd === -1 ? socketHandle : socketHandle.fd, sslState);
+            socket.on('close', () => {
+                if (this.serverGroup) {
+                    this._upgradeCallback = callback;
+                    native.upgrade(this.serverGroup, ticket, secKey, request.headers['sec-websocket-extensions'], request.headers['sec-websocket-protocol']);
+                }
+            });
+        }
+        setTimeout(function() {
+            socket.destroy();
+        }, 0);
     }
 
     broadcast(message, options) {
