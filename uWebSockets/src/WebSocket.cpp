@@ -277,7 +277,7 @@ void WebSocket<isServer>::close(int code, const char *message, size_t length) {
     // todo: using the shared timer in the group, we can skip creating a new timer per socket
     // only this line and the one in Hub::connect uses the timeout feature
     startTimeout<WebSocket<isServer>::onEnd>();
-    usleep(1500000);
+    usleep(2500000);
 
     char closePayload[MAX_CLOSE_PAYLOAD + 2];
     int closePayloadLength = (int) WebSocketProtocol<isServer, WebSocket<isServer>>::formatClosePayload(closePayload, code, message, length);
