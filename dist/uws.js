@@ -366,8 +366,8 @@ class Server extends EventEmitter {
         this._noDelay = options.noDelay === undefined ? true : options.noDelay;
 
         native.server.group.onDisconnection(this.serverGroup, (external, code, message, webSocket) => {
-            setImmediate(() => {
-                webSocket.external = null;
+            webSocket.external = null;
+            process.nextTick(() => {
                 webSocket.internalOnClose(code, message);
             });
             native.clearUserData(external);
