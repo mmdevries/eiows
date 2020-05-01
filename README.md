@@ -1,13 +1,13 @@
 uws is a replacement module for ws which allows, but doesn't guarantee, significant performance and memory-usage improvements. This module is specifically only compatible with Node.js.
-This package is mainly meant for projects which depend on the performance of the “original uws package” in combination with Socket.IO and Express and it should work on Node 8, 10 and 12.
+This package is mainly meant for projects which depend on the performance of the “original uws package” in combination with Socket.IO and Express and it should work on Node 8, 10, 12 and 14.
 
 Installation:
 
-npm install mmdevries/uws#2.5.0
+npm install mmdevries/uws#2.5.1
 
 or
 
-yarn add mmdevries/uws#2.5.0
+yarn add mmdevries/uws#2.5.1
 
 
 Example:
