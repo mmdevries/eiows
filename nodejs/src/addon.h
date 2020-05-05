@@ -186,17 +186,9 @@ void getAddress(const FunctionCallbackInfo<Value> &args) {
       unwrapSocket<isServer>(args[0].As<External>())->getAddress();
   Isolate *isolate = args.GetIsolate();
   Local<Array> array = Array::New(isolate, 3);
-#if NODE_MAJOR_VERSION >= 14
   array->Set(isolate->GetCurrentContext(), 0, Integer::New(isolate, address.port));
-  array->Set(isolate->GetCurrentContext(), 1, String::NewFromUtf8(isolate, address.address).ToLocalChecked());
-  array->Set(isolate->GetCurrentContext(), 2, String::NewFromUtf8(isolate, address.family).ToLocalChecked());
-#else
-  MaybeLocal<String> addressSt = String::NewFromUtf8(isolate, address.address, NewStringType::kNormal);
-  MaybeLocal<String> familySt = String::NewFromUtf8(isolate, address.family, NewStringType::kNormal);
-  array->Set(0, Integer::New(isolate, address.port));
-  array->Set(1, addressSt.ToLocalChecked());
-  array->Set(2, familySt.ToLocalChecked());
-#endif
+  array->Set(isolate->GetCurrentContext(), 1, String::NewFromUtf8(isolate, address.address, NewStringType::kNormal).ToLocalChecked());
+  array->Set(isolate->GetCurrentContext(), 2, String::NewFromUtf8(isolate, address.family,  NewStringType::kNormal).ToLocalChecked());
   args.GetReturnValue().Set(array);
 }
 
@@ -613,11 +605,6 @@ struct Namespace {
     NODE_SET_METHOD(group, "terminate", terminateGroup<isServer>);
     NODE_SET_METHOD(group, "broadcast", broadcast<isServer>);
 
-#if NODE_MAJOR_VERSION >= 13
-    object->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "group").ToLocalChecked(), group);
-#else
-    MaybeLocal<String> groupSt = String::NewFromUtf8(isolate, "group", NewStringType::kNormal);
-    object->Set(groupSt.ToLocalChecked(), group);
-#endif
+    object->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "group", NewStringType::kNormal).ToLocalChecked(), group);
   }
 };
