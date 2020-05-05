@@ -5,6 +5,10 @@ void Main(Local<Object> exports)
 {
   Isolate *isolate = exports->GetIsolate();
 
+#ifdef UWS_FASTCALLBACK
+  isolate->SetMicrotasksPolicy(MicrotasksPolicy::kAuto);
+#endif
+
   exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "server", NewStringType::kNormal).ToLocalChecked(),
       Namespace<uWS::SERVER>(isolate).object);
   exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "client", NewStringType::kNormal).ToLocalChecked(),

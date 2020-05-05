@@ -52,18 +52,6 @@ public:
         zlibBuffer = new char[LARGE_BUFFER_SIZE];
 
         allocateDefaultCompressor(&deflationStream);
-
-#ifdef UWS_THREADSAFE
-        getLoop()->preCbData = nodeData;
-        getLoop()->preCb = [](void *nodeData) {
-            static_cast<uS::NodeData *>(nodeData)->asyncMutex->lock();
-        };
-
-        getLoop()->postCbData = nodeData;
-        getLoop()->postCb = [](void *nodeData) {
-            static_cast<uS::NodeData *>(nodeData)->asyncMutex->unlock();
-        };
-#endif
     }
 
     ~Hub() {
