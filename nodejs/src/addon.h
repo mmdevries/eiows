@@ -28,8 +28,7 @@ public:
             return;
         }
         SSL* ptr = ssl_.get();
-        v8::Local<v8::External> ext = v8::External::New(isolate, ptr);
-        info.GetReturnValue().Set(ext);
+        info.GetReturnValue().Set(v8::External::New(isolate, ptr));
     }
 };
  #undef NODE_WANT_INTERNALS
@@ -145,11 +144,9 @@ inline uWS::WebSocket<isServer> *unwrapSocket(Local<External> external) {
 inline Local<Value> wrapMessage(const char *message, size_t length,
                                 uWS::OpCode opCode, Isolate *isolate) {
   if (opCode == uWS::OpCode::BINARY) {
-      MaybeLocal<Object> data = node::Buffer::Copy(isolate, (char *)message, length);
-      return  (Local<Value>)data.ToLocalChecked();
+      return node::Buffer::Copy(isolate, (char *)message, length).ToLocalChecked();
   } else {
-      MaybeLocal<String> messageSt = String::NewFromUtf8(isolate, message, NewStringType::kNormal, length);
-      return (Local<Value>)messageSt.ToLocalChecked();
+      return String::NewFromUtf8(isolate, message, NewStringType::kNormal, length).ToLocalChecked();
   }
 }
 
@@ -291,9 +288,7 @@ void transfer(const FunctionCallbackInfo<Value> &args) {
   uv_handle_t *handle = nullptr;
   Ticket *ticket = new Ticket;
   if (args[0]->IsObject()) {
-    Isolate* isolate = args.GetIsolate();
-    Local<Context> context = isolate->GetCurrentContext();
-
+    Local<Context> context = args.GetIsolate()->GetCurrentContext();
     uv_fileno((handle = getTcpHandle(
                    args[0]->ToObject(context).ToLocalChecked()->GetAlignedPointerFromInternalField(0))),
               (uv_os_fd_t *)&ticket->fd);
@@ -542,9 +537,7 @@ void startAutoPing(const FunctionCallbackInfo<Value> &args) {
 void getSSLContext(const FunctionCallbackInfo<Value> &args) {
     Isolate* isolate = args.GetIsolate();
     if(args.Length() < 1 || !args[0]->IsObject()){
-      MaybeLocal<String> msgSt = String::NewFromUtf8(isolate, "Error: One object expected", NewStringType::kNormal);
-      isolate->ThrowException(Exception::TypeError(
-      msgSt.ToLocalChecked()));
+      isolate->ThrowException(Exception::TypeError(String::NewFromUtf8(isolate, "Error: One object expected", NewStringType::kNormal).ToLocalChecked()));
       return;
     }
     Local<Context> context = isolate->GetCurrentContext();
