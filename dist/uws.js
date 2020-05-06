@@ -409,9 +409,7 @@ class Server extends EventEmitter {
                     native.upgrade(this.serverGroup, ticket, secKey, request.headers['sec-websocket-extensions'], request.headers['sec-websocket-protocol']);
                 }
             });
-            setTimeout(() => {
-                socket.destroy();
-            }, 0);
+            socket.destroy();
         } else {
             return this.abortConnection(socket, 400, 'Bad Request');
         }
