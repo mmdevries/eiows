@@ -6,14 +6,14 @@ const EventEmitter = require('events');
 const EE_ERROR = 'Registering more than one listener to a WebSocket is not supported.';
 const DEFAULT_PAYLOAD_LIMIT = 16777216;
 
-var WebSocketClient = {};
-WebSocketClient.PERMESSAGE_DEFLATE = 1;
-WebSocketClient.SLIDING_DEFLATE_WINDOW = 16;
-WebSocketClient.OPCODE_TEXT = 1;
-WebSocketClient.OPCODE_BINARY = 2;
-WebSocketClient.OPCODE_PING = 9;
-WebSocketClient.OPEN = 1;
-WebSocketClient.CLOSED = 0;
+var uws = {};
+uws.PERMESSAGE_DEFLATE = 1;
+uws.SLIDING_DEFLATE_WINDOW = 16;
+uws.OPCODE_TEXT = 1;
+uws.OPCODE_BINARY = 2;
+uws.OPCODE_PING = 9;
+uws.OPEN = 1;
+uws.CLOSED = 0;
 
 function noop() {}
 
@@ -26,7 +26,7 @@ const native = (() => {
         return require(`./uws_${process.platform}_${process.versions.modules}`);
     } catch (e) {
         throw new Error(e.toString() + '\n\nCompilation of µWebSockets has failed and there is no correct pre-compiled binary ' +
-            'available for your system. Please install a supported C++14 compiler and reinstall the module \'uws\'.');
+            'available for your system. Please install a supported C++17 compiler and reinstall the module \'uws\'.');
     }
 })();
 
@@ -84,7 +84,7 @@ class WebSocket {
 
             const binary = options && typeof options.binary === 'boolean' ? options.binary : typeof message !== 'string';
 
-            native.server.send(this.external, message, binary ? WebSocketClient.OPCODE_BINARY : WebSocketClient.OPCODE_TEXT, cb ? (() => {
+            native.server.send(this.external, message, binary ? uws.OPCODE_BINARY : uws.OPCODE_TEXT, cb ? (() => {
                 process.nextTick(cb);
             }) : undefined, options && options.compress);
         } else if (cb) {
@@ -110,10 +110,10 @@ class Server extends EventEmitter {
 
         var nativeOptions = 0;
         if (options.perMessageDeflate !== undefined && options.perMessageDeflate !== false) {
-            nativeOptions |= WebSocketClient.PERMESSAGE_DEFLATE;
+            nativeOptions |= uws.PERMESSAGE_DEFLATE;
 
             if (options.perMessageDeflate.serverNoContextTakeover === false) {
-                nativeOptions |= WebSocketClient.SLIDING_DEFLATE_WINDOW;
+                nativeOptions |= uws.SLIDING_DEFLATE_WINDOW;
             }
         }
 
@@ -171,6 +171,7 @@ class Server extends EventEmitter {
     }
 }
 
-WebSocketClient.Server = Server;
-WebSocketClient.native = native;
-module.exports = WebSocketClient;
+uws.Server = Server;
+uws.native = native;
+
+module.exports = uws;
