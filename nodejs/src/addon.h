@@ -120,16 +120,6 @@ void createGroup(const FunctionCallbackInfo<Value> &args) {
   args.GetReturnValue().Set(External::New(args.GetIsolate(), group));
 }
 
-// TODO: This is never called by the js wrapper,
-//       not sure if this is a potential memory leak.
-template <bool isServer>
-void deleteGroup(const FunctionCallbackInfo<Value> &args) {
-  uWS::Group<isServer> *group =
-      (uWS::Group<isServer> *)args[0].As<External>()->Value();
-  delete (GroupData *)group->getUserData();
-  delete group;
-}
-
 template <bool isServer>
 inline Local<External> wrapSocket(uWS::WebSocket<isServer> *webSocket,
                                   Isolate *isolate) {
@@ -247,15 +237,6 @@ void send(const FunctionCallbackInfo<Value> &args) {
              sc, compress);
 }
 
-void connect(const FunctionCallbackInfo<Value> &args) {
-  uWS::Group<uWS::CLIENT> *clientGroup =
-      (uWS::Group<uWS::CLIENT> *)args[0].As<External>()->Value();
-  NativeString uri(args.GetIsolate(), args[1]);
-  hub.connect(std::string(uri.getData(), uri.getLength()),
-              new Persistent<Value>(args.GetIsolate(), args[2]), {}, 5000,
-              clientGroup);
-}
-
 struct Ticket {
   uv_os_sock_t fd;
   SSL *ssl;
@@ -357,44 +338,6 @@ void onMessage(const FunctionCallbackInfo<Value> &args) {
 }
 
 template <bool isServer>
-void onPing(const FunctionCallbackInfo<Value> &args) {
-  uWS::Group<isServer> *group =
-      (uWS::Group<isServer> *)args[0].As<External>()->Value();
-  GroupData *groupData = (GroupData *)group->getUserData();
-
-  Isolate *isolate = args.GetIsolate();
-  Persistent<Function> *pingCallback = &groupData->pingHandler;
-  pingCallback->Reset(isolate, Local<Function>::Cast(args[1]));
-  group->onPing([isolate, pingCallback](uWS::WebSocket<isServer> *webSocket,
-                                        const char *message, size_t length) {
-    HandleScope hs(isolate);
-    Local<Value> argv[] = {
-        wrapMessage(message, length, uWS::OpCode::PING, isolate),
-        getDataV8(webSocket, isolate)};
-    Callback(isolate, Local<Function>::New(isolate, *pingCallback), 2, argv);
-  });
-}
-
-template <bool isServer>
-void onPong(const FunctionCallbackInfo<Value> &args) {
-  uWS::Group<isServer> *group =
-      (uWS::Group<isServer> *)args[0].As<External>()->Value();
-  GroupData *groupData = (GroupData *)group->getUserData();
-
-  Isolate *isolate = args.GetIsolate();
-  Persistent<Function> *pongCallback = &groupData->pongHandler;
-  pongCallback->Reset(isolate, Local<Function>::Cast(args[1]));
-  group->onPong([isolate, pongCallback](uWS::WebSocket<isServer> *webSocket,
-                                        const char *message, size_t length) {
-    HandleScope hs(isolate);
-    Local<Value> argv[] = {
-        wrapMessage(message, length, uWS::OpCode::PONG, isolate),
-        getDataV8(webSocket, isolate)};
-    Callback(isolate, Local<Function>::New(isolate, *pongCallback), 2, argv);
-  });
-}
-
-template <bool isServer>
 void onDisconnection(const FunctionCallbackInfo<Value> &args) {
   uWS::Group<isServer> *group =
       (uWS::Group<isServer> *)args[0].As<External>()->Value();
@@ -418,37 +361,12 @@ void onDisconnection(const FunctionCallbackInfo<Value> &args) {
   });
 }
 
-void onError(const FunctionCallbackInfo<Value> &args) {
-  uWS::Group<uWS::CLIENT> *group =
-      (uWS::Group<uWS::CLIENT> *)args[0].As<External>()->Value();
-  GroupData *groupData = (GroupData *)group->getUserData();
-
-  Isolate *isolate = args.GetIsolate();
-  Persistent<Function> *errorCallback = &groupData->errorHandler;
-  errorCallback->Reset(isolate, Local<Function>::Cast(args[1]));
-
-  group->onError([isolate, errorCallback](void *user) {
-    HandleScope hs(isolate);
-    Local<Value> argv[] = {
-        Local<Value>::New(isolate, *(Persistent<Value> *)user)};
-    Callback(isolate, Local<Function>::New(isolate, *errorCallback), 1, argv);
-
-    ((Persistent<Value> *)user)->Reset();
-    delete (Persistent<Value> *)user;
-  });
-}
-
 template <bool isServer>
 void closeSocket(const FunctionCallbackInfo<Value> &args) {
   NativeString nativeString(args.GetIsolate(), args[2]);
   unwrapSocket<isServer>(args[0].As<External>())
       ->close(args[1].As<Integer>()->Value(), nativeString.getData(),
               nativeString.getLength());
-}
-
-template <bool isServer>
-void terminateSocket(const FunctionCallbackInfo<Value> &args) {
-  unwrapSocket<isServer>(args[0].As<External>())->terminate();
 }
 
 template <bool isServer>
@@ -459,80 +377,6 @@ void closeGroup(const FunctionCallbackInfo<Value> &args) {
   group->close(args[1].As<Integer>()->Value(), nativeString.getData(),
                nativeString.getLength());
 }
-
-template <bool isServer>
-void terminateGroup(const FunctionCallbackInfo<Value> &args) {
-  ((uWS::Group<isServer> *)args[0].As<External>()->Value())->terminate();
-}
-
-template <bool isServer>
-void broadcast(const FunctionCallbackInfo<Value> &args) {
-  uWS::Group<isServer> *group =
-      (uWS::Group<isServer> *)args[0].As<External>()->Value();
-  uWS::OpCode opCode =
-      args[2].As<Boolean>()->Value() ? uWS::OpCode::BINARY : uWS::OpCode::TEXT;
-  NativeString nativeString(args.GetIsolate(), args[1]);
-  group->broadcast(nativeString.getData(), nativeString.getLength(), opCode, false);
-}
-
-template <bool isServer>
-void prepareMessage(const FunctionCallbackInfo<Value> &args) {
-  uWS::OpCode opCode = (uWS::OpCode)args[1].As<Integer>()->Value();
-  NativeString nativeString(args.GetIsolate(), args[0]);
-  args.GetReturnValue().Set(External::New(
-      args.GetIsolate(),
-      uWS::WebSocket<isServer>::prepareMessage(
-          nativeString.getData(), nativeString.getLength(), opCode, false)));
-}
-
-template <bool isServer>
-void sendPrepared(const FunctionCallbackInfo<Value> &args) {
-  unwrapSocket<isServer>(args[0].As<External>())
-      ->sendPrepared(
-          (typename uWS::WebSocket<isServer>::PreparedMessage *)args[1]
-              .As<External>()
-              ->Value());
-}
-
-template <bool isServer>
-void finalizeMessage(const FunctionCallbackInfo<Value> &args) {
-  uWS::WebSocket<isServer>::finalizeMessage(
-      (typename uWS::WebSocket<isServer>::PreparedMessage *)args[0]
-          .As<External>()
-          ->Value());
-}
-
-void forEach(const FunctionCallbackInfo<Value> &args) {
-  Isolate *isolate = args.GetIsolate();
-  uWS::Group<uWS::SERVER> *group =
-      (uWS::Group<uWS::SERVER> *)args[0].As<External>()->Value();
-  Local<Function> cb = Local<Function>::Cast(args[1]);
-  Local<Context> context = isolate->GetCurrentContext();
-
-  group->forEach([isolate, &cb, &context](uWS::WebSocket<uWS::SERVER> *webSocket) {
-    Local<Value> argv[] = {getDataV8(webSocket, isolate)};
-    cb->Call(context, Null(isolate), 1, argv);
-  });
-}
-
-void getSize(const FunctionCallbackInfo<Value> &args) {
-  uWS::Group<uWS::SERVER> *group =
-      (uWS::Group<uWS::SERVER> *)args[0].As<External>()->Value();
-  GroupData *groupData = (GroupData *)group->getUserData();
-  args.GetReturnValue().Set(Integer::New(args.GetIsolate(), groupData->size));
-}
-
-void startAutoPing(const FunctionCallbackInfo<Value> &args) {
-  uWS::Group<uWS::SERVER> *group =
-      (uWS::Group<uWS::SERVER> *)args[0].As<External>()->Value();
-
-  NativeString nativeString(args.GetIsolate(), args[2]);
-
-  group->startAutoPing(
-      args[1].As<Integer>()->Value(),
-      nativeString.getData(), nativeString.getLength(), uWS::OpCode::BINARY);
-}
-
 
 void getSSLContext(const FunctionCallbackInfo<Value> &args) {
     Isolate* isolate = args.GetIsolate();
@@ -556,11 +400,6 @@ void setNoop(const FunctionCallbackInfo<Value> &args) {
   noop.Reset(args.GetIsolate(), Local<Function>::Cast(args[0]));
 }
 
-void listen(const FunctionCallbackInfo<Value> &args) {
-  uWS::Group<uWS::SERVER> *group =
-      (uWS::Group<uWS::SERVER> *)args[0].As<External>()->Value();
-  hub.listen(args[1].As<Integer>()->Value(), nullptr, 0, group);
-}
 
 template <bool isServer>
 struct Namespace {
@@ -569,32 +408,14 @@ struct Namespace {
     object = Object::New(isolate);
     NODE_SET_METHOD(object, "send", send<isServer>);
     NODE_SET_METHOD(object, "close", closeSocket<isServer>);
-    NODE_SET_METHOD(object, "terminate", terminateSocket<isServer>);
-    NODE_SET_METHOD(object, "prepareMessage", prepareMessage<isServer>);
-    NODE_SET_METHOD(object, "sendPrepared", sendPrepared<isServer>);
-    NODE_SET_METHOD(object, "finalizeMessage", finalizeMessage<isServer>);
 
     Local<Object> group = Object::New(isolate);
     NODE_SET_METHOD(group, "onConnection", onConnection<isServer>);
     NODE_SET_METHOD(group, "onMessage", onMessage<isServer>);
     NODE_SET_METHOD(group, "onDisconnection", onDisconnection<isServer>);
 
-    if (!isServer) {
-      NODE_SET_METHOD(group, "onError", onError);
-    } else {
-      NODE_SET_METHOD(group, "forEach", forEach);
-      NODE_SET_METHOD(group, "getSize", getSize);
-      NODE_SET_METHOD(group, "startAutoPing", startAutoPing);
-      NODE_SET_METHOD(group, "listen", listen);
-    }
-
-    NODE_SET_METHOD(group, "onPing", onPing<isServer>);
-    NODE_SET_METHOD(group, "onPong", onPong<isServer>);
     NODE_SET_METHOD(group, "create", createGroup<isServer>);
-    NODE_SET_METHOD(group, "delete", deleteGroup<isServer>);
     NODE_SET_METHOD(group, "close", closeGroup<isServer>);
-    NODE_SET_METHOD(group, "terminate", terminateGroup<isServer>);
-    NODE_SET_METHOD(group, "broadcast", broadcast<isServer>);
 
     object->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "group", NewStringType::kNormal).ToLocalChecked(), group);
   }
