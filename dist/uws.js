@@ -17,6 +17,10 @@ WebSocketClient.CLOSED = 0;
 
 function noop() {}
 
+function abortConnection(socket, code, message) {
+    return socket.end(`HTTP/1.1 ${code} ${message}\r\n\r\n`);
+}
+
 const native = (() => {
     try {
         return require(`./uws_${process.platform}_${process.versions.modules}`);
@@ -138,10 +142,6 @@ class Server extends EventEmitter {
         });
     }
 
-    abortConnection(socket, code, message) {
-        return socket.end(`HTTP/1.1 ${code} ${message}\r\n\r\n`);
-    }
-
     handleUpgrade(request, socket, upgradeHead, callback) {
         const secKey = request.headers['sec-websocket-key'];
         const socketHandle = socket.ssl ? socket._parent._handle : socket._handle;
@@ -155,9 +155,11 @@ class Server extends EventEmitter {
                     native.upgrade(this.serverGroup, ticket, secKey, request.headers['sec-websocket-extensions'], request.headers['sec-websocket-protocol']);
                 }
             });
-            socket.destroy();
+            setImmediate(() => {
+                socket.destroy();
+            });
         } else {
-            return this.abortConnection(socket, 400, 'Bad Request');
+            return abortConnection(socket, 400, 'Bad Request');
         }
     }
 
