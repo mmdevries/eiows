@@ -263,18 +263,11 @@ void WebSocket<isServer>::transfer(Group<isServer> *group) {
  */
 template <bool isServer>
 void WebSocket<isServer>::close(int code, const char *message, size_t length) {
-
-    // startTimeout is not thread safe
-
     static const int MAX_CLOSE_PAYLOAD = 123;
     length = std::min<size_t>(MAX_CLOSE_PAYLOAD, length);
     Group<isServer>::from(this)->removeWebSocket(this);
     Group<isServer>::from(this)->disconnectionHandler(this, code, (char *) message, length);
     setShuttingDown(true);
-
-    // todo: using the shared timer in the group, we can skip creating a new timer per socket
-    // only this line and the one in Hub::connect uses the timeout feature
-    startTimeout<WebSocket<isServer>::onEnd>();
 
     char closePayload[MAX_CLOSE_PAYLOAD + 2];
     int closePayloadLength = (int) WebSocketProtocol<isServer, WebSocket<isServer>>::formatClosePayload(closePayload, code, message, length);
@@ -283,6 +276,8 @@ void WebSocket<isServer>::close(int code, const char *message, size_t length) {
             p->shutdown();
         }
     });
+
+    WebSocket<isServer>::onEnd(this);
 }
 
 template <bool isServer>
@@ -292,8 +287,6 @@ void WebSocket<isServer>::onEnd(uS::Socket *s) {
     if (!webSocket->isShuttingDown()) {
         Group<isServer>::from(webSocket)->removeWebSocket(webSocket);
         Group<isServer>::from(webSocket)->disconnectionHandler(webSocket, 1006, nullptr, 0);
-    } else {
-        webSocket->cancelTimeout();
     }
 
     webSocket->template closeSocket<WebSocket<isServer>>();
