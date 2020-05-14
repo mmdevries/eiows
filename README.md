@@ -3,11 +3,11 @@ This package is mainly meant for projects which depend on the performance of the
 
 Installation:
 
-npm install mmdevries/uws#2.6.2
+npm install mmdevries/uws#2.6.3
 
 or
 
-yarn add mmdevries/uws#2.6.2
+yarn add mmdevries/uws#2.6.3
 
 
 Example:
