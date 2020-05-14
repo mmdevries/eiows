@@ -2,7 +2,6 @@
 /* jslint node: true, bitwise: true */
 
 'use strict';
-const EventEmitter = require('events');
 const EE_ERROR = 'Registering more than one listener to a WebSocket is not supported.';
 const DEFAULT_PAYLOAD_LIMIT = 16777216;
 
@@ -100,10 +99,8 @@ class WebSocket {
     }
 }
 
-class Server extends EventEmitter {
+class Server {
     constructor(options) {
-        super();
-
         if (!options) {
             throw new TypeError('missing options');
         }
