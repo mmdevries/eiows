@@ -1,5 +1,4 @@
 #include "Hub.h"
-#include "HTTPSocket.h"
 #include <openssl/sha.h>
 #include <string>
 
@@ -96,7 +95,6 @@ void Hub::upgrade(uv_os_sock_t fd, const char *secKey, SSL *ssl, const char *ext
     uS::Socket s((uS::NodeData *) serverGroup, serverGroup->loop, fd, ssl);
     s.setNoDelay(true);
 
-    // todo: skip httpSocket -> it cannot fail anyways!
     bool perMessageDeflate = false;
     ExtensionsNegotiator<uWS::SERVER> extensionsNegotiator(serverGroup->extensionOptions);
     extensionsNegotiator.readOffer(std::string(extensions, extensionsLength));
@@ -111,7 +109,7 @@ void Hub::upgrade(uv_os_sock_t fd, const char *secKey, SSL *ssl, const char *ext
     webSocket->setState<WebSocket<SERVER>>();
     webSocket->change(webSocket->nodeData->loop, webSocket, webSocket->setPoll(UV_READABLE));
     serverGroup->addWebSocket(webSocket);
-    serverGroup->connectionHandler(webSocket, {});
+    serverGroup->connectionHandler(webSocket);
 }
 
 }

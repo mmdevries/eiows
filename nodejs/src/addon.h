@@ -106,9 +106,7 @@ class NativeString {
 };
 
 struct GroupData {
-  Persistent<Function> connectionHandler, messageHandler, disconnectionHandler,
-      pingHandler, pongHandler, errorHandler, httpRequestHandler,
-      httpUpgradeHandler, httpCancelledRequestCallback;
+  Persistent<Function> connectionHandler, messageHandler, disconnectionHandler, pingHandler, pongHandler, errorHandler;
   int size = 0;
 };
 
@@ -304,7 +302,7 @@ void onConnection(const FunctionCallbackInfo<Value> &args) {
   connectionCallback->Reset(isolate, Local<Function>::Cast(args[1]));
   group->onConnection(
       [isolate, connectionCallback, groupData](
-          uWS::WebSocket<isServer> *webSocket, uWS::HttpRequest req) {
+          uWS::WebSocket<isServer> *webSocket) {
         groupData->size++;
         HandleScope hs(isolate);
         Local<Value> argv[] = {wrapSocket(webSocket, isolate)};

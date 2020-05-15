@@ -72,12 +72,6 @@ public:
     using Group<CLIENT>::onPong;
     using Group<SERVER>::onError;
     using Group<CLIENT>::onError;
-    using Group<SERVER>::onHttpRequest;
-    using Group<SERVER>::onHttpData;
-    using Group<SERVER>::onHttpConnection;
-    using Group<SERVER>::onHttpDisconnection;
-    using Group<SERVER>::onHttpUpgrade;
-    using Group<SERVER>::onCancelledHttpRequest;
 
     friend struct WebSocket<SERVER>;
     friend struct WebSocket<CLIENT>;
