@@ -40,7 +40,6 @@ protected:
 
     // todo: cannot be named user, collides with parent!
     void *userData = nullptr;
-    static void timerCallback(uS::Timer *timer);
 
     WebSocket<isServer> *webSocketHead = nullptr;
 
@@ -48,7 +47,6 @@ protected:
     void removeWebSocket(WebSocket<isServer> *webSocket);
 
     Group(int extensionOptions, unsigned int maxPayload, Hub *hub, uS::NodeData *nodeData);
-    void stopListening();
 
 public:
     std::function<void(WebSocket<isServer> *, char *, size_t)> pongHandler;
@@ -62,27 +60,11 @@ public:
     void onError(std::function<void(errorType)> handler);
 
     // Thread safe
-    void broadcast(const char *message, size_t length, OpCode opCode, bool isPing);
     void setUserData(void *user);
     void *getUserData();
 
     // Not thread safe
-    void terminate();
     void close(int code = 1000, char *message = nullptr, size_t length = 0);
-    void startAutoPing(int intervalMs, const char *message, size_t length, OpCode opCode);
-
-    // same as listen(TRANSFERS), backwards compatible API for now
-    void addAsync() {
-        if (!async) {
-            NodeData::addAsync();
-        }
-    }
-
-    void listen(ListenOptions listenOptions) {
-        if (listenOptions == TRANSFERS && !async) {
-            addAsync();
-        }
-    }
 
     template <class F>
     void forEach(const F &cb) {
