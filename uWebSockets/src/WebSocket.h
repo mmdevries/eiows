@@ -9,9 +9,6 @@ namespace uWS {
 template <bool isServer>
 struct Group;
 
-template <bool isServer>
-struct HttpSocket;
-
 template <const bool isServer>
 struct WIN32_EXPORT WebSocket : uS::Socket, WebSocketState<isServer> {
 protected:
@@ -65,8 +62,6 @@ public:
     };
 
     // Not thread safe
-    void sendPrepared(PreparedMessage *preparedMessage, void *callbackData = nullptr);
-    static void finalizeMessage(PreparedMessage *preparedMessage);
     void close(int code = 1000, const char *message = nullptr, size_t length = 0);
     void transfer(Group<isServer> *group);
 
@@ -75,13 +70,9 @@ public:
     void ping(const char *message) {send(message, OpCode::PING);}
     void send(const char *message, OpCode opCode = OpCode::TEXT) {send(message, strlen(message), opCode);}
     void send(const char *message, size_t length, OpCode opCode, void(*callback)(WebSocket<isServer> *webSocket, void *data, bool cancelled, void *reserved) = nullptr, void *callbackData = nullptr, bool compress = false);
-    static PreparedMessage *prepareMessage(char *data, size_t length, OpCode opCode, bool compressed, void(*callback)(WebSocket<isServer> *webSocket, void *data, bool cancelled, void *reserved) = nullptr);
-    static PreparedMessage *prepareMessageBatch(std::vector<std::string> &messages, std::vector<int> &excludedMessages,
-                                                OpCode opCode, bool compressed, void(*callback)(WebSocket<isServer> *webSocket, void *data, bool cancelled, void *reserved) = nullptr);
 
     friend struct Hub;
     friend struct Group<isServer>;
-    friend struct HttpSocket<isServer>;
     friend struct uS::Socket;
     friend class WebSocketProtocol<isServer, WebSocket<isServer>>;
 };
