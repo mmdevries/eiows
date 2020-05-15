@@ -97,14 +97,17 @@ void Hub::upgrade(uv_os_sock_t fd, const char *secKey, SSL *ssl, const char *ext
     s.setNoDelay(true);
 
     // todo: skip httpSocket -> it cannot fail anyways!
-    HttpSocket<SERVER> *httpSocket = new HttpSocket<SERVER>(&s);
-    httpSocket->setState<HttpSocket<SERVER>>();
-    httpSocket->change(httpSocket->nodeData->loop, httpSocket, httpSocket->setPoll(UV_READABLE));
-    bool perMessageDeflate;
-    httpSocket->upgrade(secKey, extensions, extensionsLength, subprotocol, subprotocolLength, &perMessageDeflate);
+    bool perMessageDeflate = false;
+    ExtensionsNegotiator<uWS::SERVER> extensionsNegotiator(serverGroup->extensionOptions);
+    extensionsNegotiator.readOffer(std::string(extensions, extensionsLength));
+    std::string extensionsResponse = extensionsNegotiator.generateOffer();
+    if (extensionsNegotiator.getNegotiatedOptions() & PERMESSAGE_DEFLATE) {
+        perMessageDeflate = true;
+    }
 
-    WebSocket<SERVER> *webSocket = new WebSocket<SERVER>(perMessageDeflate, httpSocket);
-    delete httpSocket;
+    WebSocket<SERVER> *webSocket = new WebSocket<SERVER>(perMessageDeflate, &s);
+    webSocket->upgrade(secKey, extensionsResponse, subprotocol, subprotocolLength);
+
     webSocket->setState<WebSocket<SERVER>>();
     webSocket->change(webSocket->nodeData->loop, webSocket, webSocket->setPoll(UV_READABLE));
     serverGroup->addWebSocket(webSocket);

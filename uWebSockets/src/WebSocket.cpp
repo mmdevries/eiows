@@ -417,6 +417,72 @@ bool WebSocket<isServer>::handleFragment(char *data, size_t length, unsigned int
     return false;
 }
 
+static void base64(unsigned char *src, char *dst) {
+    static const char *b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    for (int i = 0; i < 18; i += 3) {
+        *dst++ = b64[(src[i] >> 2) & 63];
+        *dst++ = b64[((src[i] & 3) << 4) | ((src[i + 1] & 240) >> 4)];
+        *dst++ = b64[((src[i + 1] & 15) << 2) | ((src[i + 2] & 192) >> 6)];
+        *dst++ = b64[src[i + 2] & 63];
+    }
+    *dst++ = b64[(src[18] >> 2) & 63];
+    *dst++ = b64[((src[18] & 3) << 4) | ((src[19] & 240) >> 4)];
+    *dst++ = b64[((src[19] & 15) << 2)];
+    *dst++ = '=';
+}
+
+template <bool isServer>
+void WebSocket<isServer>::upgrade(const char *secKey, const std::string& extensionsResponse, const char *subprotocol, size_t subprotocolLength) {
+    Queue::Message *messagePtr;
+
+    unsigned char shaInput[] = "XXXXXXXXXXXXXXXXXXXXXXXX258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    memcpy(shaInput, secKey, 24);
+    unsigned char shaDigest[SHA_DIGEST_LENGTH];
+    SHA1(shaInput, sizeof(shaInput) - 1, shaDigest);
+
+    char upgradeBuffer[1024];
+    memcpy(upgradeBuffer, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ", 97);
+    base64(shaDigest, upgradeBuffer + 97);
+    memcpy(upgradeBuffer + 125, "\r\n", 2);
+    size_t upgradeResponseLength = 127;
+
+    if (extensionsResponse.length() && extensionsResponse.length() < 200) {
+        memcpy(upgradeBuffer + upgradeResponseLength, "Sec-WebSocket-Extensions: ", 26);
+        memcpy(upgradeBuffer + upgradeResponseLength + 26, extensionsResponse.data(), extensionsResponse.length());
+        memcpy(upgradeBuffer + upgradeResponseLength + 26 + extensionsResponse.length(), "\r\n", 2);
+        upgradeResponseLength += 26 + extensionsResponse.length() + 2;
+    }
+    // select first protocol
+    for (unsigned int i = 0; i < subprotocolLength; i++) {
+        if (subprotocol[i] == ',') {
+            subprotocolLength = i;
+            break;
+        }
+    }
+    if (subprotocolLength && subprotocolLength < 200) {
+        memcpy(upgradeBuffer + upgradeResponseLength, "Sec-WebSocket-Protocol: ", 24);
+        memcpy(upgradeBuffer + upgradeResponseLength + 24, subprotocol, subprotocolLength);
+        memcpy(upgradeBuffer + upgradeResponseLength + 24 + subprotocolLength, "\r\n", 2);
+        upgradeResponseLength += 24 + subprotocolLength + 2;
+    }
+    static char stamp[] = "Sec-WebSocket-Version: 13\r\nWebSocket-Server: uWebSockets\r\n\r\n";
+    memcpy(upgradeBuffer + upgradeResponseLength, stamp, sizeof(stamp) - 1);
+    upgradeResponseLength += sizeof(stamp) - 1;
+
+    messagePtr = allocMessage(upgradeResponseLength, upgradeBuffer);
+
+    bool waiting;
+    if (write(messagePtr, waiting)) {
+        if (!waiting) {
+            freeMessage(messagePtr);
+        } else {
+            messagePtr->callback = nullptr;
+        }
+    } else {
+        freeMessage(messagePtr);
+    }
+}
+
 template struct WebSocket<SERVER>;
 template struct WebSocket<CLIENT>;
 

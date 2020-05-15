@@ -54,6 +54,8 @@ protected:
 
     static bool handleFragment(char *data, size_t length, unsigned int remainingBytes, int opCode, bool fin, WebSocketState<isServer> *webSocketState);
 
+    void upgrade(const char *secKey, const std::string& extensionsResponse, const char *subprotocol, size_t subprotocolLength);
+
 public:
     struct PreparedMessage {
         char *buffer;
