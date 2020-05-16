@@ -11,7 +11,6 @@
                 'uWebSockets/src/Hub.cpp',
                 'uWebSockets/src/Node.cpp',
                 'uWebSockets/src/WebSocket.cpp',
-                'uWebSockets/src/HTTPSocket.cpp',
                 'uWebSockets/src/Socket.cpp'
             ],
             'conditions': [
