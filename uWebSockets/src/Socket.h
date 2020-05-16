@@ -34,7 +34,6 @@ protected:
     void *user = nullptr;
     NodeData *nodeData;
 
-    // this is not needed by HttpSocket!
     struct Queue {
         struct Message {
             const char *data;
@@ -203,7 +202,7 @@ protected:
                     }
                     break;
                 } else {
-                    // Warning: onData can delete the socket! Happens when HttpSocket upgrades
+                    // Warning: onData can delete the socket! Happens when WebSocket upgrades
                     socket = STATE::onData((Socket *) p, socket->nodeData->recvBuffer, length);
                     if (socket->isClosed() || socket->isShuttingDown()) {
                         return;

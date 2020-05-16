@@ -59,19 +59,12 @@ public:
     using uS::Node::poll;
     using uS::Node::getLoop;
     using Group<SERVER>::onConnection;
-    using Group<CLIENT>::onConnection;
     using Group<SERVER>::onTransfer;
-    using Group<CLIENT>::onTransfer;
     using Group<SERVER>::onMessage;
-    using Group<CLIENT>::onMessage;
     using Group<SERVER>::onDisconnection;
-    using Group<CLIENT>::onDisconnection;
     using Group<SERVER>::onPing;
-    using Group<CLIENT>::onPing;
     using Group<SERVER>::onPong;
-    using Group<CLIENT>::onPong;
     using Group<SERVER>::onError;
-    using Group<CLIENT>::onError;
 
     friend struct WebSocket<SERVER>;
     friend struct WebSocket<CLIENT>;

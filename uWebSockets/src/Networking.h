@@ -159,16 +159,6 @@ namespace TLS {
 class WIN32_EXPORT Context {
 protected:
     SSL_CTX *context = nullptr;
-    std::shared_ptr<std::string> password;
-
-    static int passwordCallback(char *buf, int size, int rwflag, void *u)
-    {
-        std::string *password = (std::string *) u;
-        int length = std::min<int>(size, (int) password->length());
-        memcpy(buf, password->data(), length);
-        buf[length] = '\0';
-        return length;
-    }
 
 public:
     Context(SSL_CTX *context) : context(context) {
