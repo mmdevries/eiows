@@ -25,7 +25,7 @@ protected:
     WebSocket(bool perMessageDeflate, uS::Socket *socket);
 
     static uS::Socket *onData(uS::Socket *s, char *data, size_t length);
-    static void onEnd(uS::Socket *s);
+    static void onEnd(uS::Socket *s, int code = 1006);
     using uS::Socket::closeSocket;
 
     static bool refusePayloadLength(uint64_t length, WebSocketState<isServer> *webSocketState) {

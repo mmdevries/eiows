@@ -85,10 +85,10 @@ protected:
 
     static inline void rotateMask(unsigned int offset, char *mask) {
         char originalMask[4] = {mask[0], mask[1], mask[2], mask[3]};
-        mask[(0 + offset) % 4] = originalMask[0];
-        mask[(1 + offset) % 4] = originalMask[1];
-        mask[(2 + offset) % 4] = originalMask[2];
-        mask[(3 + offset) % 4] = originalMask[3];
+        mask[(0 + offset) & 3] = originalMask[0];
+        mask[(1 + offset) & 3] = originalMask[1];
+        mask[(2 + offset) & 3] = originalMask[2];
+        mask[(3 + offset) & 3] = originalMask[3];
     }
 
     static inline void unmaskInplace(char *data, char *stop, char *mask) {
@@ -153,7 +153,7 @@ protected:
             if (isServer) {
                 memcpy(wState->mask, src + MESSAGE_HEADER - 4, 4);
                 unmaskImprecise(src, src + MESSAGE_HEADER, wState->mask, length - MESSAGE_HEADER);
-                rotateMask(4 - (length - MESSAGE_HEADER) % 4, wState->mask);
+                rotateMask(4 - ((length - MESSAGE_HEADER) & 3), wState->mask);
             } else {
                 src += MESSAGE_HEADER;
             }
@@ -167,7 +167,7 @@ protected:
             if (isServer) {
                 int n = wState->remainingBytes >> 2;
                 unmaskInplace(src, src + n * 4, wState->mask);
-                for (int i = 0, s = wState->remainingBytes % 4; i < s; i++) {
+                for (int i = 0, s = wState->remainingBytes & 3; i < s; i++) {
                     src[n * 4 + i] ^= wState->mask[i];
                 }
             }
@@ -194,8 +194,8 @@ protected:
                 return false;
             }
 
-            if (isServer && length % 4) {
-                rotateMask(4 - (length % 4), wState->mask);
+            if (isServer && (length & 3)) {
+                rotateMask(4 - (length & 3), wState->mask);
             }
             return false;
         }
@@ -331,9 +331,9 @@ public:
             // this is not optimal
             char *start = dst + headerLength;
             char *stop = start + length;
-            int i = 0;
+            unsigned int i = 0;
             while (start != stop) {
-                (*start++) ^= mask[i++ % 4];
+                (*start++) ^= mask[i++ & 3];
             }
         }
         return messageLength;
