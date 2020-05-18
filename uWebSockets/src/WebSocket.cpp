@@ -36,7 +36,7 @@ void WebSocket<isServer>::send(const char *message, size_t length, OpCode opCode
     }
 #endif
 
-    const int HEADER_LENGTH = WebSocketProtocol<!isServer, WebSocket<!isServer>>::LONG_MESSAGE_HEADER;
+    const int HEADER_LENGTH = 10;
 
     struct TransformData {
         OpCode opCode;
@@ -52,10 +52,10 @@ void WebSocket<isServer>::send(const char *message, size_t length, OpCode opCode
         static size_t transform(const char *src, char *dst, size_t length, TransformData transformData) {
             if (transformData.compress) {
                 char *deflated = Group<isServer>::from(transformData.s)->hub->deflate((char *) src, length, (z_stream *) transformData.s->slidingDeflateWindow);
-                return WebSocketProtocol<isServer, WebSocket<isServer>>::formatMessage(dst, deflated, length, transformData.opCode, length, true);
+                return WebSocketProtocol<WebSocket<isServer>>::formatMessage(dst, deflated, length, transformData.opCode, length, true);
             }
 
-            return WebSocketProtocol<isServer, WebSocket<isServer>>::formatMessage(dst, src, length, transformData.opCode, length, false);
+            return WebSocketProtocol<WebSocket<isServer>>::formatMessage(dst, src, length, transformData.opCode, length, false);
         }
     };
 
@@ -69,7 +69,7 @@ uS::Socket *WebSocket<isServer>::onData(uS::Socket *s, char *data, size_t length
     webSocket->hasOutstandingPong = false;
     if (!webSocket->isShuttingDown()) {
         webSocket->cork(true);
-        WebSocketProtocol<isServer, WebSocket<isServer>>::consume(data, (unsigned int) length, webSocket);
+        WebSocketProtocol<WebSocket<isServer>>::consume(data, (unsigned int) length, webSocket);
         if (!webSocket->isClosed()) {
             webSocket->cork(false);
         }
@@ -143,7 +143,7 @@ void WebSocket<isServer>::close(int code, const char *message, size_t length) {
     setShuttingDown(true);
 
     char closePayload[MAX_CLOSE_PAYLOAD + 2];
-    int closePayloadLength = (int) WebSocketProtocol<isServer, WebSocket<isServer>>::formatClosePayload(closePayload, code, message, length);
+    int closePayloadLength = (int) WebSocketProtocol<WebSocket<isServer>>::formatClosePayload(closePayload, code, message, length);
     send(closePayload, closePayloadLength, OpCode::CLOSE, [](WebSocket<isServer> *p, void *data, bool cancelled, void *reserved) {
         if (!cancelled) {
             p->shutdown();
@@ -182,7 +182,7 @@ void WebSocket<isServer>::onEnd(uS::Socket *s, int code) {
 }
 
 template <bool isServer>
-bool WebSocket<isServer>::handleFragment(char *data, size_t length, unsigned int remainingBytes, int opCode, bool fin, WebSocketState<isServer> *webSocketState) {
+bool WebSocket<isServer>::handleFragment(char *data, size_t length, unsigned int remainingBytes, int opCode, bool fin, WebSocketState *webSocketState) {
     WebSocket<isServer> *webSocket = static_cast<WebSocket<isServer> *>(webSocketState);
     Group<isServer> *group = Group<isServer>::from(webSocket);
 
@@ -197,7 +197,7 @@ bool WebSocket<isServer>::handleFragment(char *data, size_t length, unsigned int
                     }
             }
 
-            if (opCode == 1 && !WebSocketProtocol<isServer, WebSocket<isServer>>::isValidUtf8((unsigned char *) data, length)) {
+            if (opCode == 1 && !WebSocketProtocol<WebSocket<isServer>>::isValidUtf8((unsigned char *) data, length)) {
                 forceClose(webSocketState);
                 return true;
             }
@@ -222,7 +222,7 @@ bool WebSocket<isServer>::handleFragment(char *data, size_t length, unsigned int
                     data = (char *) webSocket->fragmentBuffer.data();
                 }
 
-                if (opCode == 1 && !WebSocketProtocol<isServer, WebSocket<isServer>>::isValidUtf8((unsigned char *) data, length)) {
+                if (opCode == 1 && !WebSocketProtocol<WebSocket<isServer>>::isValidUtf8((unsigned char *) data, length)) {
                     forceClose(webSocketState);
                     return true;
                 }
@@ -237,7 +237,7 @@ bool WebSocket<isServer>::handleFragment(char *data, size_t length, unsigned int
     } else {
         if (!remainingBytes && fin && !webSocket->controlTipLength) {
             if (opCode == CLOSE) {
-                typename WebSocketProtocol<isServer, WebSocket<isServer>>::CloseFrame closeFrame = WebSocketProtocol<isServer, WebSocket<isServer>>::parseClosePayload(data, length);
+                typename WebSocketProtocol<WebSocket<isServer>>::CloseFrame closeFrame = WebSocketProtocol<WebSocket<isServer>>::parseClosePayload(data, length);
                 webSocket->close(closeFrame.code, closeFrame.message, closeFrame.length);
                 return true;
             } else {
@@ -261,7 +261,7 @@ bool WebSocket<isServer>::handleFragment(char *data, size_t length, unsigned int
             if (!remainingBytes && fin) {
                 char *controlBuffer = (char *) webSocket->fragmentBuffer.data() + webSocket->fragmentBuffer.length() - webSocket->controlTipLength;
                 if (opCode == CLOSE) {
-                    typename WebSocketProtocol<isServer, WebSocket<isServer>>::CloseFrame closeFrame = WebSocketProtocol<isServer, WebSocket<isServer>>::parseClosePayload(controlBuffer, webSocket->controlTipLength);
+                    typename WebSocketProtocol<WebSocket<isServer>>::CloseFrame closeFrame = WebSocketProtocol<WebSocket<isServer>>::parseClosePayload(controlBuffer, webSocket->controlTipLength);
                     webSocket->close(closeFrame.code, closeFrame.message, closeFrame.length);
                     return true;
                 } else {

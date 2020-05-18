@@ -14,7 +14,6 @@ enum Options : unsigned int {
     SLIDING_DEFLATE_WINDOW = 16
 };
 
-template <bool isServer>
 class ExtensionsNegotiator {
 protected:
     int options;

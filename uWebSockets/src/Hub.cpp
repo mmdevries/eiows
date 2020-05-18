@@ -96,7 +96,7 @@ void Hub::upgrade(uv_os_sock_t fd, const char *secKey, SSL *ssl, const char *ext
     s.setNoDelay(true);
 
     bool perMessageDeflate = false;
-    ExtensionsNegotiator<uWS::SERVER> extensionsNegotiator(serverGroup->extensionOptions);
+    ExtensionsNegotiator extensionsNegotiator(serverGroup->extensionOptions);
     extensionsNegotiator.readOffer(std::string(extensions, extensionsLength));
     std::string extensionsResponse = extensionsNegotiator.generateOffer();
     if (extensionsNegotiator.getNegotiatedOptions() & PERMESSAGE_DEFLATE) {

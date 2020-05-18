@@ -10,7 +10,7 @@ template <bool isServer>
 struct Group;
 
 template <const bool isServer>
-struct WIN32_EXPORT WebSocket : uS::Socket, WebSocketState<isServer> {
+struct WIN32_EXPORT WebSocket : uS::Socket, WebSocketState {
 protected:
     std::string fragmentBuffer;
     enum CompressionStatus : char {
@@ -28,12 +28,12 @@ protected:
     static void onEnd(uS::Socket *s, int code = 1006);
     using uS::Socket::closeSocket;
 
-    static bool refusePayloadLength(uint64_t length, WebSocketState<isServer> *webSocketState) {
+    static bool refusePayloadLength(uint64_t length, WebSocketState *webSocketState) {
         WebSocket<isServer> *webSocket = static_cast<WebSocket<isServer> *>(webSocketState);
         return length > Group<isServer>::from(webSocket)->maxPayload;
     }
 
-    static bool setCompressed(WebSocketState<isServer> *webSocketState) {
+    static bool setCompressed(WebSocketState *webSocketState) {
         WebSocket<isServer> *webSocket = static_cast<WebSocket<isServer> *>(webSocketState);
 
         if (webSocket->compressionStatus == WebSocket<isServer>::CompressionStatus::ENABLED) {
@@ -44,12 +44,12 @@ protected:
         }
     }
 
-    static void forceClose(WebSocketState<isServer> *webSocketState) {
+    static void forceClose(WebSocketState *webSocketState) {
         WebSocket<isServer> *webSocket = static_cast<WebSocket<isServer> *>(webSocketState);
         webSocket->terminate();
     }
 
-    static bool handleFragment(char *data, size_t length, unsigned int remainingBytes, int opCode, bool fin, WebSocketState<isServer> *webSocketState);
+    static bool handleFragment(char *data, size_t length, unsigned int remainingBytes, int opCode, bool fin, WebSocketState *webSocketState);
 
     void upgrade(const char *secKey, const std::string& extensionsResponse, const char *subprotocol, size_t subprotocolLength);
 
@@ -74,7 +74,7 @@ public:
     friend struct Hub;
     friend struct Group<isServer>;
     friend struct uS::Socket;
-    friend class WebSocketProtocol<isServer, WebSocket<isServer>>;
+    friend class WebSocketProtocol<WebSocket<isServer>>;
 };
 
 }

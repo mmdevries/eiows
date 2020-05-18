@@ -23,12 +23,11 @@ enum {
 };
 
 // 24 bytes perfectly
-template <bool isServer>
 struct WebSocketState {
 public:
-    static const unsigned int SHORT_MESSAGE_HEADER = isServer ? 6 : 2;
-    static const unsigned int MEDIUM_MESSAGE_HEADER = isServer ? 8 : 4;
-    static const unsigned int LONG_MESSAGE_HEADER = isServer ? 14 : 10;
+    static const unsigned int SHORT_MESSAGE_HEADER = 6;
+    static const unsigned int MEDIUM_MESSAGE_HEADER = 8;
+    static const unsigned int LONG_MESSAGE_HEADER = 14;
 
     // 16 bytes
     struct State {
@@ -52,15 +51,15 @@ public:
 
     // 8 bytes
     unsigned int remainingBytes = 0;
-    char mask[isServer ? 4 : 1];
+    char mask[4];
 };
-
-template <const bool isServer, class Impl>
+ 
+template <class Impl>
 class WIN32_EXPORT WebSocketProtocol {
 public:
-    static const unsigned int SHORT_MESSAGE_HEADER = isServer ? 6 : 2;
-    static const unsigned int MEDIUM_MESSAGE_HEADER = isServer ? 8 : 4;
-    static const unsigned int LONG_MESSAGE_HEADER = isServer ? 14 : 10;
+    static const unsigned int SHORT_MESSAGE_HEADER = 6;
+    static const unsigned int MEDIUM_MESSAGE_HEADER = 8;
+    static const unsigned int LONG_MESSAGE_HEADER = 14;
 
 protected:
     static inline bool isFin(char *frame) {return *((unsigned char *) frame) & 128;}
@@ -107,7 +106,7 @@ protected:
     };
 
     template <unsigned int MESSAGE_HEADER, typename T>
-    static inline bool consumeMessage(T payLength, char *&src, unsigned int &length, WebSocketState<isServer> *wState) {
+    static inline bool consumeMessage(T payLength, char *&src, unsigned int &length, WebSocketState *wState) {
         if (getOpCode(src)) {
             if (wState->state.opStack == 1 || (!wState->state.lastFin && getOpCode(src) < 2)) {
                 Impl::forceClose(wState);
@@ -126,16 +125,10 @@ protected:
         }
 
         if (payLength + MESSAGE_HEADER <= length) {
-            if (isServer) {
                 unmaskImpreciseCopyMask(src + MESSAGE_HEADER - 4, src + MESSAGE_HEADER, src + MESSAGE_HEADER - 4, (unsigned int) payLength);
                 if (Impl::handleFragment(src + MESSAGE_HEADER - 4, payLength, 0, wState->state.opCode[wState->state.opStack], isFin(src), wState)) {
                     return true;
                 }
-            } else {
-                if (Impl::handleFragment(src + MESSAGE_HEADER, payLength, 0, wState->state.opCode[wState->state.opStack], isFin(src), wState)) {
-                    return true;
-                }
-            }
 
             if (isFin(src)) {
                 wState->state.opStack--;
@@ -150,27 +143,21 @@ protected:
             wState->state.wantsHead = false;
             wState->remainingBytes = (unsigned int) (payLength - length + MESSAGE_HEADER);
             bool fin = isFin(src);
-            if (isServer) {
                 memcpy(wState->mask, src + MESSAGE_HEADER - 4, 4);
                 unmaskImprecise(src, src + MESSAGE_HEADER, wState->mask, length - MESSAGE_HEADER);
                 rotateMask(4 - ((length - MESSAGE_HEADER) & 3), wState->mask);
-            } else {
-                src += MESSAGE_HEADER;
-            }
             Impl::handleFragment(src, length - MESSAGE_HEADER, wState->remainingBytes, wState->state.opCode[wState->state.opStack], fin, wState);
             return true;
         }
     }
 
-    static inline bool consumeContinuation(char *&src, unsigned int &length, WebSocketState<isServer> *wState) {
+    static inline bool consumeContinuation(char *&src, unsigned int &length, WebSocketState *wState) {
         if (wState->remainingBytes <= length) {
-            if (isServer) {
                 int n = wState->remainingBytes >> 2;
                 unmaskInplace(src, src + n * 4, wState->mask);
                 for (int i = 0, s = wState->remainingBytes & 3; i < s; i++) {
                     src[n * 4 + i] ^= wState->mask[i];
                 }
-            }
 
             if (Impl::handleFragment(src, wState->remainingBytes, 0, wState->state.opCode[wState->state.opStack], wState->state.lastFin, wState)) {
                 return false;
@@ -185,16 +172,14 @@ protected:
             wState->state.wantsHead = true;
             return true;
         } else {
-            if (isServer) {
                 unmaskInplace(src, src + ((length >> 2) + 1) * 4, wState->mask);
-            }
 
             wState->remainingBytes -= length;
             if (Impl::handleFragment(src, length, wState->remainingBytes, wState->state.opCode[wState->state.opStack], wState->state.lastFin, wState)) {
                 return false;
             }
 
-            if (isServer && (length & 3)) {
+            if (length & 3) {
                 rotateMask(4 - (length & 3), wState->mask);
             }
             return false;
@@ -311,35 +296,13 @@ public:
             dst[0] |= opCode;
         }
 
-        char mask[4];
-        if (!isServer) {
-            dst[1] |= 0x80;
-            uint32_t random = rand();
-            memcpy(mask, &random, 4);
-            memcpy(dst + headerLength, &random, 4);
-            headerLength += 4;
-        }
-
         messageLength = headerLength + length;
         memcpy(dst + headerLength, src, length);
 
-        if (!isServer) {
-
-            // overwrites up to 3 bytes outside of the given buffer!
-            //WebSocketProtocol<isServer>::unmaskInplace(dst + headerLength, dst + headerLength + length, mask);
-
-            // this is not optimal
-            char *start = dst + headerLength;
-            char *stop = start + length;
-            unsigned int i = 0;
-            while (start != stop) {
-                (*start++) ^= mask[i++ & 3];
-            }
-        }
         return messageLength;
     }
 
-    static inline void consume(char *src, unsigned int length, WebSocketState<isServer> *wState) {
+    static inline void consume(char *src, unsigned int length, WebSocketState *wState) {
         if (wState->state.spillLength) {
             src -= wState->state.spillLength;
             length += wState->state.spillLength;
