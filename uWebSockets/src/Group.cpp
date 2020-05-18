@@ -59,28 +59,12 @@ namespace uWS {
         connectionHandler = handler;
     }
 
-    void Group::onTransfer(std::function<void (WebSocket *)> handler) {
-        transferHandler = handler;
-    }
-
     void Group::onMessage(std::function<void (WebSocket *, char *, size_t, OpCode)> handler) {
         messageHandler = handler;
     }
 
     void Group::onDisconnection(std::function<void (WebSocket *, int, char *, size_t)> handler) {
         disconnectionHandler = handler;
-    }
-
-    void Group::onPing(std::function<void (WebSocket *, char *, size_t)> handler) {
-        pingHandler = handler;
-    }
-
-    void Group::onPong(std::function<void (WebSocket *, char *, size_t)> handler) {
-        pongHandler = handler;
-    }
-
-    void Group::onError(std::function<void (int, void *)> handler) {
-        errorHandler = handler;
     }
 
     void Group::close(int code, char *message, size_t length) {

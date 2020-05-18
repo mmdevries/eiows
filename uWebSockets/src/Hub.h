@@ -54,12 +54,8 @@ namespace uWS {
 
             using uS::Node::getLoop;
             using Group::onConnection;
-            using Group::onTransfer;
             using Group::onMessage;
             using Group::onDisconnection;
-            using Group::onPing;
-            using Group::onPong;
-            using Group::onError;
 
             friend struct WebSocket;
     };
