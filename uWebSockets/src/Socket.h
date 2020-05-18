@@ -117,29 +117,6 @@ namespace uS {
                 }
             }
 
-            // clears user data!
-            template <void onTimeout(Socket *)>
-                void startTimeout(int timeoutMs = 15000) {
-                    Timer *timer = new Timer(nodeData->loop);
-                    timer->setData(this);
-                    timer->start([](Timer *timer) {
-                            Socket *s = (Socket *) timer->getData();
-                            s->cancelTimeout();
-                            onTimeout(s);
-                            }, timeoutMs, 0);
-
-                    user = timer;
-                }
-
-            void cancelTimeout() {
-                Timer *timer = (Timer *) getUserData();
-                if (timer) {
-                    timer->stop();
-                    timer->close();
-                    user = nullptr;
-                }
-            }
-
             template <class STATE>
                 static void sslIoHandler(Poll *p, int status, int events) {
                     Socket *socket = (Socket *) p;
