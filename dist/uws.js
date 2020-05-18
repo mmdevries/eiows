@@ -116,7 +116,6 @@ class Server {
 
         this.serverGroup = native.server.group.create(nativeOptions, options.maxPayload === undefined ? DEFAULT_PAYLOAD_LIMIT : options.maxPayload);
 
-        // can these be made private?
         this._upgradeCallback = noop;
         this._noDelay = options.noDelay === undefined ? true : options.noDelay;
 
