@@ -66,7 +66,9 @@ inline SOCKET dup(SOCKET socket) {
 #define WIN32_EXPORT
 #endif
 
-#include "Backend.h"
+#if !defined(__linux__) || defined(USE_LIBUV)
+#include "Libuv.h"
+#endif
 #include <openssl/ssl.h>
 #include <csignal>
 #include <vector>
