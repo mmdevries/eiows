@@ -225,12 +225,6 @@ namespace uS {
         }
 
         public:
-        void addAsync() {
-            async = new Async(loop);
-            async->setData(this);
-            async->start(NodeData::asyncCallback);
-        }
-
         void clearPendingPollChanges(Poll *p) {
             asyncMutex->lock();
             changePollQueue.erase(
