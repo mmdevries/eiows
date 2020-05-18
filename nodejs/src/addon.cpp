@@ -1,4 +1,4 @@
-#include "../../uWebSockets/src/uWS.h"
+#include "../../uWebSockets/src/Hub.h"
 #include "addon.h"
 
 void Main(Local<Object> exports)
