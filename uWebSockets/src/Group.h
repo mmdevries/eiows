@@ -29,7 +29,6 @@ namespace uWS {
             unsigned int maxPayload;
             Hub *hub;
             int extensionOptions;
-            uS::Timer *timer = nullptr;
             const char *userPingMessage;
             size_t userPingMessageLength;
             OpCode pingMessageType;

@@ -71,10 +71,6 @@ namespace uWS {
         forEach([code, message, length](uWS::WebSocket *ws) {
             ws->close(code, message, length);
         });
-        if (timer) {
-            timer->stop();
-            timer->close();
-        }
     }
 
 }
