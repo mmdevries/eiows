@@ -69,8 +69,8 @@ namespace uWS {
 
     void Group::close(int code, char *message, size_t length) {
         forEach([code, message, length](uWS::WebSocket *ws) {
-                ws->close(code, message, length);
-                });
+            ws->close(code, message, length);
+        });
         if (timer) {
             timer->stop();
             timer->close();

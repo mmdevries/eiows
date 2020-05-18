@@ -118,10 +118,10 @@ namespace uWS {
         } else {
             // slow path
             uS::Socket::transfer((uS::NodeData *) group, [](Poll *p) {
-                    WebSocket *webSocket = (WebSocket *) p;
-                    Group::from(webSocket)->addWebSocket(webSocket);
-                    Group::from(webSocket)->transferHandler(webSocket);
-                    });
+                WebSocket *webSocket = (WebSocket *) p;
+                Group::from(webSocket)->addWebSocket(webSocket);
+                Group::from(webSocket)->transferHandler(webSocket);
+            });
         }
     }
 
@@ -141,10 +141,10 @@ namespace uWS {
         char closePayload[MAX_CLOSE_PAYLOAD + 2];
         int closePayloadLength = (int) WebSocketProtocol<WebSocket>::formatClosePayload(closePayload, code, message, length);
         send(closePayload, closePayloadLength, OpCode::CLOSE, [](WebSocket *p, void *data, bool cancelled, void *reserved) {
-                if (!cancelled) {
+            if (!cancelled) {
                 p->shutdown();
-                }
-                });
+            }
+        });
 
         WebSocket::onEnd(this, code);
     }

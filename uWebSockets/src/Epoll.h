@@ -84,11 +84,9 @@ namespace uS {
 
             Timepoint t = {cb, this, timepoint, repeat};
             loop->timers.insert(
-                    std::upper_bound(loop->timers.begin(), loop->timers.end(), t, [](const Timepoint &a, const Timepoint &b) {
-                        return a.timepoint < b.timepoint;
-                        }),
-                    t
-                    );
+                std::upper_bound(loop->timers.begin(), loop->timers.end(), t, [](const Timepoint &a, const Timepoint &b) {
+                    return a.timepoint < b.timepoint;
+                }), t);
 
             loop->delay = -1;
             if (loop->timers.size()) {
@@ -232,11 +230,11 @@ namespace uS {
         void start(void (*cb)(Async *)) {
             this->cb = cb;
             Poll::setCb([](Poll *p, int, int) {
-                    uint64_t val;
-                    if (::read(((Async *) p)->state.fd, &val, 8) == 8) {
+                uint64_t val;
+                if (::read(((Async *) p)->state.fd, &val, 8) == 8) {
                     ((Async *) p)->cb((Async *) p);
-                    }
-                    });
+                }
+            });
             Poll::start(loop, this, UV_READABLE);
         }
 
@@ -251,8 +249,8 @@ namespace uS {
             Poll::stop(loop);
             ::close(state.fd);
             Poll::close(loop, [](Poll *p) {
-                    delete (Async *) p;
-                    });
+                delete (Async *) p;
+            });
         }
 
         void setData(void *data) {

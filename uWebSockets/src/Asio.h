@@ -37,13 +37,13 @@ namespace uS {
         void start(void (*cb)(Timer *), int first, int repeat) {
             asio_timer.expires_from_now(boost::posix_time::milliseconds(first));
             asio_timer.async_wait([this, cb, repeat](const boost::system::error_code &ec) {
-                    if (ec != boost::asio::error::operation_aborted) {
+                if (ec != boost::asio::error::operation_aborted) {
                     if (repeat) {
-                    start(cb, repeat, repeat);
+                        start(cb, repeat, repeat);
                     }
                     cb(this);
-                    }
-                    });
+                 }
+            });
         }
 
         void setData(void *data) {
@@ -63,8 +63,8 @@ namespace uS {
 
         void close() {
             asio_timer.get_io_service().post([this]() {
-                    delete this;
-                    });
+                delete this;
+            });
         }
     };
 
@@ -84,14 +84,14 @@ namespace uS {
 
         void send() {
             loop->post([this]() {
-                    cb(this);
-                    });
+                cb(this);
+            });
         }
 
         void close() {
             loop->post([this]() {
-                    delete this;
-                    });
+                delete this;
+            });
         }
 
         void setData(void *data) {
@@ -137,20 +137,20 @@ namespace uS {
         void start(Loop *, Poll *self, int events) {
             if (events & UV_READABLE) {
                 socket->async_read_some(boost::asio::null_buffers(), [self](boost::system::error_code ec, std::size_t) {
-                        if (ec != boost::asio::error::operation_aborted) {
+                    if (ec != boost::asio::error::operation_aborted) {
                         self->start(nullptr, self, UV_READABLE);
                         self->cb(self, ec ? -1 : 0, UV_READABLE);
-                        }
-                        });
+                    }
+                });
             }
 
             if (events & UV_WRITABLE) {
                 socket->async_write_some(boost::asio::null_buffers(), [self](boost::system::error_code ec, std::size_t) {
-                        if (ec != boost::asio::error::operation_aborted) {
+                    if (ec != boost::asio::error::operation_aborted) {
                         self->start(nullptr, self, UV_WRITABLE);
                         self->cb(self, ec ? -1 : 0, UV_WRITABLE);
-                        }
-                        });
+                    }
+                });
             }
         }
 
@@ -178,8 +178,8 @@ namespace uS {
         void close(Loop *loop, void (*cb)(Poll *)) {
             socket->release();
             socket->get_io_service().post([cb, this]() {
-                    cb(this);
-                    });
+                cb(this);
+            });
             delete socket;
             socket = nullptr;
         }

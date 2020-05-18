@@ -460,10 +460,12 @@ namespace uS {
 
             void shutdown() {
                 if (ssl) {
-                    //todo: poll in/out - have the io_cb recall shutdown if failed
-                    SSL_shutdown(ssl);
+                    int ret = SSL_shutdown(ssl);
+                    if (ret == 0) {
+                        ret = SSL_shutdown(ssl);
+                    }
                 } else {
-                    ::shutdown(getFd(), SHUT_WR);
+                   ::shutdown(getFd(), SHUT_WR);
                 }
             }
 
@@ -479,8 +481,8 @@ namespace uS {
                     }
 
                     Poll::close(nodeData->loop, [](Poll *p) {
-                            delete (T *) p;
-                            });
+                       delete (T *) p;
+                    });
                 }
 
             bool isShuttingDown() {
