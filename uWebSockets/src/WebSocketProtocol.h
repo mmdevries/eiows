@@ -17,11 +17,6 @@ enum OpCode : unsigned char {
     PONG = 10
 };
 
-enum {
-    CLIENT,
-    SERVER
-};
-
 // 24 bytes perfectly
 struct WebSocketState {
 public:

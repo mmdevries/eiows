@@ -77,169 +77,169 @@ inline SOCKET dup(SOCKET socket) {
 
 namespace uS {
 
-// todo: mark sockets nonblocking in these functions
-// todo: probably merge this Context with the TLS::Context for same interface for SSL and non-SSL!
-struct Context {
+    // todo: mark sockets nonblocking in these functions
+    // todo: probably merge this Context with the TLS::Context for same interface for SSL and non-SSL!
+    struct Context {
 
 #ifdef USE_MTCP
-    mtcp_context *mctx;
+        mtcp_context *mctx;
 #endif
 
-    Context() {
-        // mtcp_create_context
+        Context() {
+            // mtcp_create_context
 #ifdef USE_MTCP
-        mctx = mtcp_create_context(0); // cpu index?
+            mctx = mtcp_create_context(0); // cpu index?
 #endif
-    }
+        }
 
-    ~Context() {
+        ~Context() {
 #ifdef USE_MTCP
-        mtcp_destroy_context(mctx);
+            mtcp_destroy_context(mctx);
 #endif
-    }
+        }
 
-    // returns INVALID_SOCKET on error
-    uv_os_sock_t acceptSocket(uv_os_sock_t fd) {
-        uv_os_sock_t acceptedFd;
+        // returns INVALID_SOCKET on error
+        uv_os_sock_t acceptSocket(uv_os_sock_t fd) {
+            uv_os_sock_t acceptedFd;
 #if defined(SOCK_CLOEXEC) && defined(SOCK_NONBLOCK)
-        // Linux, FreeBSD
-        acceptedFd = accept4(fd, nullptr, nullptr, SOCK_CLOEXEC | SOCK_NONBLOCK);
+            // Linux, FreeBSD
+            acceptedFd = accept4(fd, nullptr, nullptr, SOCK_CLOEXEC | SOCK_NONBLOCK);
 #else
-        // Windows, OS X
-        acceptedFd = accept(fd, nullptr, nullptr);
+            // Windows, OS X
+            acceptedFd = accept(fd, nullptr, nullptr);
 #endif
 
 #ifdef __APPLE__
-        if (acceptedFd != INVALID_SOCKET) {
-            int noSigpipe = 1;
-            setsockopt(acceptedFd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(int));
+            if (acceptedFd != INVALID_SOCKET) {
+                int noSigpipe = 1;
+                setsockopt(acceptedFd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(int));
+            }
+#endif
+            return acceptedFd;
         }
-#endif
-        return acceptedFd;
-    }
 
-    // returns INVALID_SOCKET on error
-    uv_os_sock_t createSocket(int domain, int type, int protocol) {
-        int flags = 0;
+        // returns INVALID_SOCKET on error
+        uv_os_sock_t createSocket(int domain, int type, int protocol) {
+            int flags = 0;
 #if defined(SOCK_CLOEXEC) && defined(SOCK_NONBLOCK)
-        flags = SOCK_CLOEXEC | SOCK_NONBLOCK;
+            flags = SOCK_CLOEXEC | SOCK_NONBLOCK;
 #endif
 
-        uv_os_sock_t createdFd = socket(domain, type | flags, protocol);
+            uv_os_sock_t createdFd = socket(domain, type | flags, protocol);
 
 #ifdef __APPLE__
-        if (createdFd != INVALID_SOCKET) {
-            int noSigpipe = 1;
-            setsockopt(createdFd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(int));
-        }
+            if (createdFd != INVALID_SOCKET) {
+                int noSigpipe = 1;
+                setsockopt(createdFd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(int));
+            }
 #endif
 
-        return createdFd;
-    }
+            return createdFd;
+        }
 
-    void closeSocket(uv_os_sock_t fd) {
+        void closeSocket(uv_os_sock_t fd) {
 #ifdef _WIN32
-        closesocket(fd);
+            closesocket(fd);
 #else
-        close(fd);
+            close(fd);
 #endif
-    }
+        }
 
-    bool wouldBlock() {
+        bool wouldBlock() {
 #ifdef _WIN32
-        return WSAGetLastError() == WSAEWOULDBLOCK;
+            return WSAGetLastError() == WSAEWOULDBLOCK;
 #else
-        return errno == EWOULDBLOCK;// || errno == EAGAIN;
+            return errno == EWOULDBLOCK;// || errno == EAGAIN;
 #endif
-    }
-};
-
-namespace TLS {
-
-class WIN32_EXPORT Context {
-protected:
-    SSL_CTX *context = nullptr;
-
-public:
-    Context(SSL_CTX *context) : context(context) {
-
-    }
-
-    Context() = default;
-    Context(const Context &other);
-    Context &operator=(const Context &other);
-    ~Context();
-    operator bool() {
-        return context;
-    }
-
-    SSL_CTX *getNativeContext() {
-        return context;
-    }
-};
-
-}
-
-struct Socket;
-
-// NodeData is like a Context, maybe merge them?
-struct WIN32_EXPORT NodeData {
-    char *recvBufferMemoryBlock;
-    char *recvBuffer;
-    int recvLength;
-    Loop *loop;
-    uS::Context *netContext;
-    void *user = nullptr;
-    static const int preAllocMaxSize = 1024;
-    char **preAlloc;
-    SSL_CTX *clientContext;
-
-    Async *async = nullptr;
-    pthread_t tid;
-
-    std::recursive_mutex *asyncMutex;
-    std::vector<Poll *> transferQueue;
-    std::vector<Poll *> changePollQueue;
-    static void asyncCallback(Async *async);
-
-    static int getMemoryBlockIndex(size_t length) {
-        return (int) ((length >> 4) + bool(length & 15));
-    }
-
-    char *getSmallMemoryBlock(int index) {
-        if (preAlloc[index]) {
-            char *memory = preAlloc[index];
-            preAlloc[index] = nullptr;
-            return memory;
-        } else {
-            return new char[index << 4];
         }
+    };
+
+    namespace TLS {
+
+        class WIN32_EXPORT Context {
+            protected:
+                SSL_CTX *context = nullptr;
+
+            public:
+                Context(SSL_CTX *context) : context(context) {
+
+                }
+
+                Context() = default;
+                Context(const Context &other);
+                Context &operator=(const Context &other);
+                ~Context();
+                operator bool() {
+                    return context;
+                }
+
+                SSL_CTX *getNativeContext() {
+                    return context;
+                }
+        };
+
     }
 
-    void freeSmallMemoryBlock(char *memory, int index) {
-        if (!preAlloc[index]) {
-            preAlloc[index] = memory;
-        } else {
-            delete [] memory;
+    struct Socket;
+
+    // NodeData is like a Context, maybe merge them?
+    struct WIN32_EXPORT NodeData {
+        char *recvBufferMemoryBlock;
+        char *recvBuffer;
+        int recvLength;
+        Loop *loop;
+        uS::Context *netContext;
+        void *user = nullptr;
+        static const int preAllocMaxSize = 1024;
+        char **preAlloc;
+        SSL_CTX *clientContext;
+
+        Async *async = nullptr;
+        pthread_t tid;
+
+        std::recursive_mutex *asyncMutex;
+        std::vector<Poll *> transferQueue;
+        std::vector<Poll *> changePollQueue;
+        static void asyncCallback(Async *async);
+
+        static int getMemoryBlockIndex(size_t length) {
+            return (int) ((length >> 4) + bool(length & 15));
         }
-    }
 
-public:
-    void addAsync() {
-        async = new Async(loop);
-        async->setData(this);
-        async->start(NodeData::asyncCallback);
-    }
+        char *getSmallMemoryBlock(int index) {
+            if (preAlloc[index]) {
+                char *memory = preAlloc[index];
+                preAlloc[index] = nullptr;
+                return memory;
+            } else {
+                return new char[index << 4];
+            }
+        }
 
-    void clearPendingPollChanges(Poll *p) {
-        asyncMutex->lock();
-        changePollQueue.erase(
-            std::remove(changePollQueue.begin(), changePollQueue.end(), p),
-            changePollQueue.end()
-        );
-        asyncMutex->unlock();
-    }
-};
+        void freeSmallMemoryBlock(char *memory, int index) {
+            if (!preAlloc[index]) {
+                preAlloc[index] = memory;
+            } else {
+                delete [] memory;
+            }
+        }
+
+        public:
+        void addAsync() {
+            async = new Async(loop);
+            async->setData(this);
+            async->start(NodeData::asyncCallback);
+        }
+
+        void clearPendingPollChanges(Poll *p) {
+            asyncMutex->lock();
+            changePollQueue.erase(
+                    std::remove(changePollQueue.begin(), changePollQueue.end(), p),
+                    changePollQueue.end()
+                    );
+            asyncMutex->unlock();
+        }
+    };
 
 }
 

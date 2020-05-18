@@ -10,7 +10,7 @@
 
 namespace uWS {
 
-    struct WIN32_EXPORT Hub : protected uS::Node, public Group<SERVER> {
+    struct WIN32_EXPORT Hub : protected uS::Node, public Group {
         protected:
             struct ConnectionData {
                 std::string path;
@@ -28,21 +28,19 @@ namespace uWS {
 
 
         public:
-            template <bool isServer>
-                Group<isServer> *createGroup(int extensionOptions = 0, unsigned int maxPayload = 16777216) {
-                    return new Group<isServer>(extensionOptions, maxPayload, this, nodeData);
-                }
+            Group *createGroup(int extensionOptions = 0, unsigned int maxPayload = 16777216) {
+                return new Group(extensionOptions, maxPayload, this, nodeData);
+            }
 
-            template <bool isServer>
-                Group<isServer> &getDefaultGroup() {
-                    return static_cast<Group<isServer> &>(*this);
-                }
+            Group &getDefaultGroup() {
+                return static_cast<Group &>(*this);
+            }
 
-            void upgrade(uv_os_sock_t fd, const char *secKey, SSL *ssl, const char *extensions, size_t extensionsLength, const char *subprotocol, size_t subprotocolLength, Group<SERVER> *serverGroup = nullptr);
+            void upgrade(uv_os_sock_t fd, const char *secKey, SSL *ssl, const char *extensions, size_t extensionsLength, const char *subprotocol, size_t subprotocolLength, Group *serverGroup = nullptr);
 
             Hub(int extensionOptions = 0, bool useDefaultLoop = false, unsigned int maxPayload = 16777216) : 
-                uS::Node(LARGE_BUFFER_SIZE, WebSocketProtocol<WebSocket<SERVER>>::CONSUME_PRE_PADDING, WebSocketProtocol<WebSocket<SERVER>>::CONSUME_POST_PADDING, useDefaultLoop),
-                Group<SERVER>(extensionOptions, maxPayload, this, nodeData) {
+                uS::Node(LARGE_BUFFER_SIZE, WebSocketProtocol<WebSocket>::CONSUME_PRE_PADDING, WebSocketProtocol<WebSocket>::CONSUME_POST_PADDING, useDefaultLoop),
+                Group(extensionOptions, maxPayload, this, nodeData) {
                     inflateInit2(&inflationStream, -15);
                     zlibBuffer = new char[LARGE_BUFFER_SIZE];
                     allocateDefaultCompressor(&deflationStream);
@@ -55,16 +53,15 @@ namespace uWS {
             }
 
             using uS::Node::getLoop;
-            using Group<SERVER>::onConnection;
-            using Group<SERVER>::onTransfer;
-            using Group<SERVER>::onMessage;
-            using Group<SERVER>::onDisconnection;
-            using Group<SERVER>::onPing;
-            using Group<SERVER>::onPong;
-            using Group<SERVER>::onError;
+            using Group::onConnection;
+            using Group::onTransfer;
+            using Group::onMessage;
+            using Group::onDisconnection;
+            using Group::onPing;
+            using Group::onPong;
+            using Group::onError;
 
-            friend struct WebSocket<SERVER>;
-            friend struct WebSocket<CLIENT>;
+            friend struct WebSocket;
     };
 
 }
