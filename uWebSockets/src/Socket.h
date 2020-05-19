@@ -475,8 +475,6 @@ namespace uS {
         ListenSocket(NodeData *nodeData, Loop *loop, uv_os_sock_t fd, SSL *ssl) : Socket(nodeData, loop, fd, ssl) {
 
         }
-
-        Timer *timer = nullptr;
         uS::TLS::Context sslContext;
     };
 
