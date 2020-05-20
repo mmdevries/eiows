@@ -2,7 +2,6 @@
 #include "Hub.h"
 
 namespace uWS {
-
     void Group::setUserData(void *user) {
         this->userData = user;
     }
@@ -51,7 +50,6 @@ namespace uWS {
             disconnectionHandler = [](WebSocket *, int, char *, size_t) {};
             pingHandler = pongHandler = [](WebSocket *, char *, size_t) {};
             errorHandler = [](int, void *) {};
-
             this->extensionOptions |= CLIENT_NO_CONTEXT_TAKEOVER | SERVER_NO_CONTEXT_TAKEOVER;
         }
 
@@ -72,5 +70,4 @@ namespace uWS {
             ws->close(code, message, length);
         });
     }
-
 }

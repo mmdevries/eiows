@@ -6,7 +6,6 @@
 #include <mutex>
 
 namespace uS {
-
     class WIN32_EXPORT Node {
         protected:
             Loop *loop;
@@ -21,7 +20,6 @@ namespace uS {
                 return loop;
             }
     };
-
 }
 
 #endif // NODE_UWS_H

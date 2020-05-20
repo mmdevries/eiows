@@ -1,9 +1,7 @@
 #include "Networking.h"
 
 namespace uS {
-
     namespace TLS {
-
         Context::Context(const Context &other)
         {
             if (other.context) {
@@ -31,7 +29,6 @@ namespace uS {
             Init() {SSL_library_init();}
             ~Init() {/*EVP_cleanup();*/}
         } init;
-
     }
 
 #ifndef _WIN32
@@ -50,5 +47,4 @@ namespace uS {
     } windowsInit;
 
 #endif
-
 }

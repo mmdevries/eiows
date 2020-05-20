@@ -9,7 +9,6 @@
 #include <map>
 
 namespace uWS {
-
     struct WIN32_EXPORT Hub : protected uS::Node, public Group {
         protected:
             struct ConnectionData {
@@ -25,7 +24,6 @@ namespace uWS {
             char *zlibBuffer;
             std::string dynamicZlibBuffer;
             static const int LARGE_BUFFER_SIZE = 300 * 1024;
-
 
         public:
             Group *createGroup(int extensionOptions = 0, unsigned int maxPayload = 16777216) {
@@ -59,7 +57,6 @@ namespace uWS {
 
             friend struct WebSocket;
     };
-
 }
 
 #endif // HUB_UWS_H

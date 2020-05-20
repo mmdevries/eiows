@@ -4,7 +4,6 @@
 #include <string>
 
 namespace uWS {
-
     enum Options : unsigned int {
         NO_OPTIONS = 0,
         PERMESSAGE_DEFLATE = 1,
@@ -23,7 +22,6 @@ namespace uWS {
             void readOffer(std::string offer);
             int getNegotiatedOptions();
     };
-
 }
 
 #endif // EXTENSIONS_UWS_H

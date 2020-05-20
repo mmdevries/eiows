@@ -3,7 +3,6 @@
 #include "Hub.h"
 
 namespace uWS {
-
     WebSocket::WebSocket(unsigned int max, bool perMessageDeflate, uS::Socket *socket) :
         uS::Socket(std::move(*socket)) {
         maxPayload = max;
@@ -346,6 +345,4 @@ namespace uWS {
             freeMessage(messagePtr);
         }
     }
-
-    struct WebSocket;
 }

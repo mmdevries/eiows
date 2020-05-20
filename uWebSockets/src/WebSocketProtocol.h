@@ -8,7 +8,6 @@
 #include <cstdlib>
 
 namespace uWS {
-
     enum OpCode : unsigned char {
         TEXT = 1,
         BINARY = 2,
@@ -342,7 +341,6 @@ parseNext:
                 static const int CONSUME_POST_PADDING = 4;
                 static const int CONSUME_PRE_PADDING = LONG_MESSAGE_HEADER - 1;
         };
-
 }
 
 #endif // WEBSOCKETPROTOCOL_UWS_H

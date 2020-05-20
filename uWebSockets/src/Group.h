@@ -7,7 +7,6 @@
 #include <stack>
 
 namespace uWS {
-
     enum ListenOptions {
         TRANSFERS
     };
@@ -78,7 +77,6 @@ namespace uWS {
                 return static_cast<Group *>(s->getNodeData());
             }
     };
-
 }
 
 #endif // GROUP_UWS_H

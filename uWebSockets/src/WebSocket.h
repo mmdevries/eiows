@@ -5,7 +5,6 @@
 #include "Socket.h"
 
 namespace uWS {
-
     struct Group;
 
     struct WIN32_EXPORT WebSocket : uS::Socket, WebSocketState {
@@ -75,7 +74,6 @@ namespace uWS {
             friend struct uS::Socket;
             friend class WebSocketProtocol<WebSocket>;
     };
-
 }
 
 #endif // WEBSOCKET_UWS_H

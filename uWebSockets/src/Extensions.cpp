@@ -87,7 +87,6 @@ namespace uWS {
             if (options & Options::CLIENT_NO_CONTEXT_TAKEOVER) {
                 extensionsOffer += "; client_no_context_takeover";
             }
-
             // we do not support accepting this yet
             // todo: if we agree on this, do not allocate a compressor
             // per socket!
@@ -99,7 +98,6 @@ namespace uWS {
                 //extensionsOffer += "; server_no_context_takeover";
             }
         }
-
         return extensionsOffer;
     }
 
@@ -109,7 +107,6 @@ namespace uWS {
             if (extensionsParser.clientNoContextTakeover || (options & CLIENT_NO_CONTEXT_TAKEOVER)) {
                 options |= CLIENT_NO_CONTEXT_TAKEOVER;
             }
-
             if (extensionsParser.serverNoContextTakeover) {
                 options |= SERVER_NO_CONTEXT_TAKEOVER;
             } else {
@@ -123,5 +120,4 @@ namespace uWS {
     int ExtensionsNegotiator::getNegotiatedOptions() {
         return options;
     }
-
 }

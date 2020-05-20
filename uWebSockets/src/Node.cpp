@@ -30,7 +30,6 @@ namespace uS {
         nodeData->clientContext = SSL_CTX_new(SSLv23_client_method());
         SSL_CTX_set_options(nodeData->clientContext, SSL_OP_NO_SSLv3);
 #endif
-
     }
 
     Node::~Node() {
@@ -48,5 +47,4 @@ namespace uS {
         delete nodeData;
         loop->destroy();
     }
-
 }

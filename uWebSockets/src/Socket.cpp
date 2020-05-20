@@ -1,7 +1,6 @@
 #include "Socket.h"
 
 namespace uS {
-
     Socket::Address Socket::getAddress()
     {
         uv_os_sock_t fd = getFd();
@@ -24,5 +23,4 @@ namespace uS {
             return {ntohs(ipv6->sin6_port), buf, "IPv6"};
         }
     }
-
 }

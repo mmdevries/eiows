@@ -4,7 +4,6 @@
 #include "Networking.h"
 
 namespace uS {
-
     struct TransferData {
         // Connection state
         uv_os_sock_t fd;
@@ -90,18 +89,17 @@ namespace uS {
                 setUserData(new TransferData({getFd(), ssl, getCb(), getPoll(), getUserData(), nodeData, cb}));
                 stop(this->nodeData->loop);
                 close(this->nodeData->loop, [](Poll *p) {
-                        Socket *s = (Socket *) p;
-                        TransferData *transferData = (TransferData *) s->getUserData();
+                    Socket *s = (Socket *) p;
+                    TransferData *transferData = (TransferData *) s->getUserData();
+                    transferData->destination->asyncMutex->lock();
+                    bool wasEmpty = transferData->destination->transferQueue.empty();
+                    transferData->destination->transferQueue.push_back(s);
+                    transferData->destination->asyncMutex->unlock();
 
-                        transferData->destination->asyncMutex->lock();
-                        bool wasEmpty = transferData->destination->transferQueue.empty();
-                        transferData->destination->transferQueue.push_back(s);
-                        transferData->destination->asyncMutex->unlock();
-
-                        if (wasEmpty) {
+                    if (wasEmpty) {
                         transferData->destination->async->send();
-                        }
-                        });
+                    }
+                });
             }
 
             void changePoll(Socket *socket) {
@@ -469,13 +467,9 @@ namespace uS {
     };
 
     struct ListenSocket : Socket {
-
-        ListenSocket(NodeData *nodeData, Loop *loop, uv_os_sock_t fd, SSL *ssl) : Socket(nodeData, loop, fd, ssl) {
-
-        }
+        ListenSocket(NodeData *nodeData, Loop *loop, uv_os_sock_t fd, SSL *ssl) : Socket(nodeData, loop, fd, ssl) {}
         uS::TLS::Context sslContext;
     };
-
 }
 
 #endif // SOCKET_UWS_H

@@ -78,7 +78,6 @@ inline SOCKET dup(SOCKET socket) {
 #include <memory>
 
 namespace uS {
-
     // todo: mark sockets nonblocking in these functions
     // todo: probably merge this Context with the TLS::Context for same interface for SSL and non-SSL!
     struct Context {
@@ -135,7 +134,6 @@ namespace uS {
                 setsockopt(createdFd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(int));
             }
 #endif
-
             return createdFd;
         }
 
@@ -157,15 +155,12 @@ namespace uS {
     };
 
     namespace TLS {
-
         class WIN32_EXPORT Context {
             protected:
                 SSL_CTX *context = nullptr;
 
             public:
-                Context(SSL_CTX *context) : context(context) {
-
-                }
+                Context(SSL_CTX *context) : context(context) {}
 
                 Context() = default;
                 Context(const Context &other);
@@ -179,7 +174,6 @@ namespace uS {
                     return context;
                 }
         };
-
     }
 
     struct Socket;
@@ -236,7 +230,6 @@ namespace uS {
             asyncMutex->unlock();
         }
     };
-
 }
 
 #endif // NETWORKING_UWS_H
