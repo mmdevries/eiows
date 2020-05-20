@@ -94,8 +94,6 @@ namespace uWS {
                 }
 
                 enum {
-                    SND_CONTINUATION = 1,
-                    SND_NO_FIN = 2,
                     SND_COMPRESSED = 64
                 };
 
@@ -284,11 +282,7 @@ namespace uWS {
                         *((uint64_t *) &dst[2]) = htobe64(reportedLength);
                     }
 
-                    int flags = 0;
-                    dst[0] = (flags & SND_NO_FIN ? 0 : 128) | (compressed ? SND_COMPRESSED : 0);
-                    if (!(flags & SND_CONTINUATION)) {
-                        dst[0] |= opCode;
-                    }
+                    dst[0] = 128 | (compressed ? SND_COMPRESSED : 0) | opCode;
 
                     messageLength = headerLength + length;
                     memcpy(dst + headerLength, src, length);
