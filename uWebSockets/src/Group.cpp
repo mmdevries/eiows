@@ -55,15 +55,15 @@ namespace uWS {
             this->extensionOptions |= CLIENT_NO_CONTEXT_TAKEOVER | SERVER_NO_CONTEXT_TAKEOVER;
         }
 
-    void Group::onConnection(std::function<void (WebSocket *)> handler) {
+    void Group::onConnection(const std::function<void (WebSocket *)> &handler) {
         connectionHandler = handler;
     }
 
-    void Group::onMessage(std::function<void (WebSocket *, char *, size_t, OpCode)> handler) {
+    void Group::onMessage(const std::function<void (WebSocket *, char *, size_t, OpCode)> &handler) {
         messageHandler = handler;
     }
 
-    void Group::onDisconnection(std::function<void (WebSocket *, int, char *, size_t)> handler) {
+    void Group::onDisconnection(const std::function<void (WebSocket *, int, char *, size_t)> &handler) {
         disconnectionHandler = handler;
     }
 

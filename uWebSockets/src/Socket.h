@@ -105,15 +105,13 @@ namespace uS {
             }
 
             void changePoll(Socket *socket) {
-                if (!threadSafeChange(nodeData->loop, this, socket->getPoll())) {
-                    if (socket->nodeData->tid != pthread_self()) {
-                        socket->nodeData->asyncMutex->lock();
-                        socket->nodeData->changePollQueue.push_back(socket);
-                        socket->nodeData->asyncMutex->unlock();
-                        socket->nodeData->async->send();
-                    } else {
-                        change(socket->nodeData->loop, socket, socket->getPoll());
-                    }
+                if (socket->nodeData->tid != pthread_self()) {
+                    socket->nodeData->asyncMutex->lock();
+                    socket->nodeData->changePollQueue.push_back(socket);
+                    socket->nodeData->asyncMutex->unlock();
+                    socket->nodeData->async->send();
+                } else {
+                    change(socket->nodeData->loop, socket, socket->getPoll());
                 }
             }
 

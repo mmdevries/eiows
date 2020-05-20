@@ -47,9 +47,9 @@ namespace uWS {
         public:
             std::function<void(WebSocket *, char *, size_t)> pongHandler;
 
-            void onConnection(std::function<void(WebSocket *)> handler);
-            void onMessage(std::function<void(WebSocket *, char *, size_t, OpCode)> handler);
-            void onDisconnection(std::function<void(WebSocket *, int code, char *message, size_t length)> handler);
+            void onConnection(const std::function<void(WebSocket *)> &handler);
+            void onMessage(const std::function<void(WebSocket *, char *, size_t, OpCode)> &handler);
+            void onDisconnection(const std::function<void(WebSocket *, int code, char *message, size_t length)> &handler);
 
             // Thread safe
             void setUserData(void *user);

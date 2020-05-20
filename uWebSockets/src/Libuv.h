@@ -125,14 +125,6 @@ namespace uS {
             uv_poll_stop(uv_poll);
         }
 
-        bool fastTransfer(Loop *loop, Loop *newLoop, int events) {
-            return false;
-        }
-
-        bool threadSafeChange(Loop *, Poll *self, int events) {
-            return false;
-        }
-
         void close(Loop *loop, void (*cb)(Poll *)) {
             this->cb = (void(*)(Poll *, int, int)) cb;
             uv_close((uv_handle_t *) uv_poll, [](uv_handle_t *p) {
