@@ -147,8 +147,8 @@ namespace uWS {
             if (!cancelled) {
                 p->shutdown();
             }
-            WebSocket::onEnd(p);
         });
+        WebSocket::onEnd(this);
     }
 
     void WebSocket::onEnd(uS::Socket *s) {
