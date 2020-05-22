@@ -268,7 +268,7 @@ namespace uS {
                 return messagePtr;
             }
 
-            void freeMessage(Queue::Message *message) {
+            static void freeMessage(Queue::Message *message) {
                 delete [] (char *) message;
             }
 

@@ -100,7 +100,7 @@ namespace uS {
         }
 
         // returns INVALID_SOCKET on error
-        uv_os_sock_t acceptSocket(uv_os_sock_t fd) {
+        static uv_os_sock_t acceptSocket(uv_os_sock_t fd) {
             uv_os_sock_t acceptedFd;
 #if defined(SOCK_CLOEXEC) && defined(SOCK_NONBLOCK)
             // Linux, FreeBSD
@@ -120,7 +120,7 @@ namespace uS {
         }
 
         // returns INVALID_SOCKET on error
-        uv_os_sock_t createSocket(int domain, int type, int protocol) {
+        static uv_os_sock_t createSocket(int domain, int type, int protocol) {
             int flags = 0;
 #if defined(SOCK_CLOEXEC) && defined(SOCK_NONBLOCK)
             flags = SOCK_CLOEXEC | SOCK_NONBLOCK;
@@ -137,7 +137,7 @@ namespace uS {
             return createdFd;
         }
 
-        void closeSocket(uv_os_sock_t fd) {
+        static void closeSocket(uv_os_sock_t fd) {
 #ifdef _WIN32
             closesocket(fd);
 #else
@@ -145,7 +145,7 @@ namespace uS {
 #endif
         }
 
-        bool wouldBlock() {
+        static bool wouldBlock() {
 #ifdef _WIN32
             return WSAGetLastError() == WSAEWOULDBLOCK;
 #else
