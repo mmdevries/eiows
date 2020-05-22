@@ -8,9 +8,9 @@ namespace uS {
     struct Loop : uv_loop_t {
         static Loop *createLoop(bool defaultLoop = true) {
             if (defaultLoop) {
-                return (Loop *) uv_default_loop();
+                return static_cast<Loop *>(uv_default_loop());
             } else {
-                return (Loop *) uv_loop_new();
+                return static_cast<Loop *>(uv_loop_new());
             }
         }
 
@@ -46,8 +46,8 @@ namespace uS {
 
         void close() {
             uv_close((uv_handle_t *) &uv_async, [](uv_handle_t *a) {
-                    delete (Async *) a;
-                    });
+                delete reinterpret_cast<Async *>(a);
+            });
         }
 
         void setData(void *data) {
@@ -81,13 +81,13 @@ namespace uS {
         }
 
         bool isClosed() {
-            return uv_is_closing((uv_handle_t *) uv_poll);
+            return uv_is_closing(reinterpret_cast<uv_handle_t *>(uv_poll));
         }
 
         uv_os_sock_t getFd() {
 #ifdef _WIN32
             uv_os_sock_t fd;
-            uv_fileno((uv_handle_t *) uv_poll, (uv_os_fd_t *) &fd);
+            uv_fileno(static_cast<uv_handle_t *>(uv_poll), static_cast<uv_os_fd_t *>(&fd));
             return fd;
 #else
             return uv_poll->io_watcher.fd;
@@ -111,7 +111,7 @@ namespace uS {
         void start(Loop *, Poll *self, int events) {
             uv_poll->data = self;
             uv_poll_start(uv_poll, events, [](uv_poll_t *p, int status, int events) {
-                Poll *self = (Poll *) p->data;
+                Poll *self = static_cast<Poll *>(p->data);
                 self->cb(self, status, events);
             });
         }
@@ -127,7 +127,7 @@ namespace uS {
         void close(Loop *loop, void (*cb)(Poll *)) {
             this->cb = (void(*)(Poll *, int, int)) cb;
             uv_close((uv_handle_t *) uv_poll, [](uv_handle_t *p) {
-                Poll *poll = (Poll *) p->data;
+                Poll *poll = static_cast<Poll *>(p->data);
                 void (*cb)(Poll *) = (void(*)(Poll *)) poll->cb;
                 cb(poll);
             });

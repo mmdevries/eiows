@@ -29,12 +29,12 @@ namespace uWS {
             webSocketHead = nullptr;
         } else {
             if (webSocket->prev) {
-                ((WebSocket *) webSocket->prev)->next = webSocket->next;
+                (static_cast<WebSocket *>(webSocket->prev))->next = webSocket->next;
             } else {
-                webSocketHead = (WebSocket *) webSocket->next;
+                webSocketHead = static_cast<WebSocket *>(webSocket->next);
             }
             if (webSocket->next) {
-                ((WebSocket *) webSocket->next)->prev = webSocket->prev;
+                (static_cast<WebSocket *>(webSocket->next))->prev = webSocket->prev;
             }
         }
     }

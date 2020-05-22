@@ -179,7 +179,7 @@ struct SendCallbackData {
 };
 
 void sendCallback(uWS::WebSocket *webSocket, void *data, bool cancelled, void *reserved) {
-    SendCallbackData *sc = (SendCallbackData *)data;
+    SendCallbackData *sc = static_cast<SendCallbackData *>(data);
     if (!cancelled) {
         HandleScope hs(sc->isolate);
         Callback(sc->isolate, Local<Function>::New(sc->isolate, sc->jsCallback), 0, nullptr);
@@ -213,7 +213,7 @@ struct Ticket {
 
 void upgrade(const FunctionCallbackInfo<Value> &args) {
     uWS::Group *serverGroup = (uWS::Group *)args[0].As<External>()->Value();
-    Ticket *ticket = (Ticket *)args[1].As<External>()->Value();
+    Ticket *ticket = static_cast<Ticket *>(args[1].As<External>()->Value());
     Isolate *isolate = args.GetIsolate();
     NativeString secKey(isolate, args[2]);
     NativeString extensions(isolate, args[3]);
@@ -259,7 +259,7 @@ void transfer(const FunctionCallbackInfo<Value> &args) {
 
 void onConnection(const FunctionCallbackInfo<Value> &args) {
     uWS::Group *group = (uWS::Group *)args[0].As<External>()->Value();
-    GroupData *groupData = (GroupData *)group->getUserData();
+    GroupData *groupData = static_cast<GroupData *>(group->getUserData());
 
     Isolate *isolate = args.GetIsolate();
     Persistent<Function> *connectionCallback = &groupData->connectionHandler;
@@ -274,7 +274,7 @@ void onConnection(const FunctionCallbackInfo<Value> &args) {
 
 void onMessage(const FunctionCallbackInfo<Value> &args) {
     uWS::Group *group = (uWS::Group *)args[0].As<External>()->Value();
-    GroupData *groupData = (GroupData *)group->getUserData();
+    GroupData *groupData = static_cast<GroupData *>(group->getUserData());
 
     Isolate *isolate = args.GetIsolate();
     Persistent<Function> *messageCallback = &groupData->messageHandler;
@@ -295,7 +295,7 @@ void onMessage(const FunctionCallbackInfo<Value> &args) {
 
 void onDisconnection(const FunctionCallbackInfo<Value> &args) {
     uWS::Group *group = (uWS::Group *)args[0].As<External>()->Value();
-    GroupData *groupData = (GroupData *)group->getUserData();
+    GroupData *groupData = static_cast<GroupData *>(group->getUserData());
 
     Isolate *isolate = args.GetIsolate();
     Persistent<Function> *disconnectionCallback = &groupData->disconnectionHandler;

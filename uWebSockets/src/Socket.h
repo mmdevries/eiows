@@ -89,8 +89,8 @@ namespace uS {
                 setUserData(new TransferData({getFd(), ssl, getCb(), getPoll(), getUserData(), nodeData, cb}));
                 stop(this->nodeData->loop);
                 close(this->nodeData->loop, [](Poll *p) {
-                    Socket *s = (Socket *) p;
-                    TransferData *transferData = (TransferData *) s->getUserData();
+                    Socket *s = static_cast<Socket *>(p);
+                    TransferData *transferData = static_cast<TransferData *>(s->getUserData());
                     transferData->destination->asyncMutex->lock();
                     bool wasEmpty = transferData->destination->transferQueue.empty();
                     transferData->destination->transferQueue.push_back(s);
@@ -115,10 +115,10 @@ namespace uS {
 
             template <class STATE>
                 static void sslIoHandler(Poll *p, int status, int events) {
-                    Socket *socket = (Socket *) p;
+                    Socket *socket = static_cast<Socket *>(p);
 
                     if (status < 0) {
-                        STATE::onEnd((Socket *) p);
+                        STATE::onEnd(static_cast<Socket *>(p));
                         return;
                     }
 
@@ -148,7 +148,7 @@ namespace uS {
                                         }
                                         break;
                                     default:
-                                        STATE::onEnd((Socket *) p);
+                                        STATE::onEnd(static_cast<Socket *>(p));
                                         return;
                                 }
                                 break;
@@ -170,13 +170,13 @@ namespace uS {
                                         }
                                         break;
                                     default:
-                                        STATE::onEnd((Socket *) p);
+                                        STATE::onEnd(static_cast<Socket *>(p));
                                         return;
                                 }
                                 break;
                             } else {
                                 // Warning: onData can delete the socket! Happens when WebSocket upgrades
-                                socket = STATE::onData((Socket *) p, socket->nodeData->recvBuffer, length);
+                                socket = STATE::onData(static_cast<Socket *>(p), socket->nodeData->recvBuffer, length);
                                 if (socket->isClosed() || socket->isShuttingDown()) {
                                     return;
                                 }
@@ -187,12 +187,12 @@ namespace uS {
 
             template <class STATE>
                 static void ioHandler(Poll *p, int status, int events) {
-                    Socket *socket = (Socket *) p;
+                    Socket *socket = static_cast<Socket *>(p);
                     NodeData *nodeData = socket->nodeData;
                     Context *netContext = nodeData->netContext;
 
                     if (status < 0) {
-                        STATE::onEnd((Socket *) p);
+                        STATE::onEnd(static_cast<Socket *>(p));
                         return;
                     }
 
@@ -214,7 +214,7 @@ namespace uS {
                                     }
                                 } else if (sent == SOCKET_ERROR) {
                                     if (!netContext->wouldBlock()) {
-                                        STATE::onEnd((Socket *) p);
+                                        STATE::onEnd(static_cast<Socket *>(p));
                                         return;
                                     }
                                     break;
@@ -231,12 +231,11 @@ namespace uS {
                     if (events & UV_READABLE) {
                         int length = (int) recv(socket->getFd(), nodeData->recvBuffer, nodeData->recvLength, 0);
                         if (length > 0) {
-                            STATE::onData((Socket *) p, nodeData->recvBuffer, length);
+                            STATE::onData(static_cast<Socket *>(p), nodeData->recvBuffer, length);
                         } else if (length <= 0 || (length == SOCKET_ERROR && !netContext->wouldBlock())) {
-                            STATE::onEnd((Socket *) p);
+                            STATE::onEnd(static_cast<Socket *>(p));
                         }
                     }
-
                 }
 
             template<class STATE>

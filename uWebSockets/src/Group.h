@@ -63,7 +63,7 @@ namespace uWS {
                     iterators.push(iterator);
                     while (iterator) {
                         uS::Poll *lastIterator = iterator;
-                        cb((WebSocket *) iterator);
+                        cb(static_cast<WebSocket *>(iterator));
                         iterator = iterators.top();
                         if (lastIterator == iterator) {
                             iterator = ((uS::Socket *) iterator)->next;

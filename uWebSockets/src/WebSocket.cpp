@@ -117,7 +117,7 @@ namespace uWS {
         } else {
             // slow path
             uS::Socket::transfer((uS::NodeData *) group, [](Poll *p) {
-                WebSocket *webSocket = (WebSocket *) p;
+                WebSocket *webSocket = static_cast<WebSocket *>(p);
                 Group::from(webSocket)->addWebSocket(webSocket);
                 Group::from(webSocket)->transferHandler(webSocket);
             });
