@@ -79,7 +79,7 @@ namespace uWS {
         options = wantedOptions;
     }
 
-    std::string ExtensionsNegotiator::generateOffer() {
+    std::string ExtensionsNegotiator::generateOffer() const {
         std::string extensionsOffer;
         if (options & Options::PERMESSAGE_DEFLATE) {
             extensionsOffer += "permessage-deflate";
@@ -117,7 +117,7 @@ namespace uWS {
         }
     }
 
-    int ExtensionsNegotiator::getNegotiatedOptions() {
+    int ExtensionsNegotiator::getNegotiatedOptions() const {
         return options;
     }
 }

@@ -93,7 +93,7 @@ class NativeString {
 
     char *getData() { return data; }
 
-    size_t getLength() { return length; }
+    size_t getLength() const { return length; }
 
     ~NativeString() {
         if (utf8Value) {

@@ -85,7 +85,7 @@ namespace uS {
             return uv_is_closing(reinterpret_cast<uv_handle_t *>(uv_poll));
         }
 
-        uv_os_sock_t getFd() {
+        uv_os_sock_t getFd() const {
 #ifdef _WIN32
             uv_os_sock_t fd;
             uv_fileno(static_cast<uv_handle_t *>(uv_poll), static_cast<uv_os_fd_t *>(&fd));

@@ -18,9 +18,9 @@ namespace uWS {
             int options;
         public:
             ExtensionsNegotiator(int wantedOptions);
-            std::string generateOffer();
+            std::string generateOffer() const;
             void readOffer(std::string offer);
-            int getNegotiatedOptions();
+            int getNegotiatedOptions() const;
     };
 }
 

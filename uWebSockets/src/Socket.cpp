@@ -1,8 +1,7 @@
 #include "Socket.h"
 
 namespace uS {
-    Socket::Address Socket::getAddress()
-    {
+    Socket::Address Socket::getAddress() const {
         uv_os_sock_t fd = getFd();
 
         sockaddr_storage addr;

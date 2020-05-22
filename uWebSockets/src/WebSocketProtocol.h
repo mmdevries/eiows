@@ -233,6 +233,7 @@ namespace uWS {
 
                 static inline CloseFrame parseClosePayload(char *src, size_t length) {
                     CloseFrame cf = {code: 0, message: "", length: 0};
+
                     if (length >= 2) {
                         memcpy(&cf.code, src, 2);
                         cf = {ntohs(cf.code), src + 2, length - 2};

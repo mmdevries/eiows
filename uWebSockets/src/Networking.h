@@ -166,7 +166,7 @@ namespace uS {
                 Context(const Context &other);
                 Context &operator=(const Context &other);
                 ~Context();
-                operator bool() {
+                operator bool() const {
                     return context;
                 }
 

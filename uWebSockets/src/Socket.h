@@ -55,7 +55,7 @@ namespace uS {
                     }
                 }
 
-                bool empty() {return head == nullptr;}
+                bool empty() const {return head == nullptr;}
                 Message *front() {return head;}
 
                 void push(Message *message)
@@ -126,7 +126,7 @@ namespace uS {
                         socket->cork(true);
                         while (true) {
                             Queue::Message *messagePtr = socket->messageQueue.front();
-                            int sent = SSL_write(socket->ssl, messagePtr->data, (int) messagePtr->length);
+                            ssize_t sent = SSL_write(socket->ssl, messagePtr->data, (int) messagePtr->length);
                             if (sent == (ssize_t) messagePtr->length) {
                                 if (messagePtr->callback) {
                                     messagePtr->callback(p, messagePtr->callbackData, false, messagePtr->reserved);
@@ -273,9 +273,8 @@ namespace uS {
             }
 
             bool write(Queue::Message *message, bool &waiting) {
-                ssize_t sent = 0;
                 if (messageQueue.empty()) {
-
+                    ssize_t sent = 0;
                     if (ssl) {
                         sent = SSL_write(ssl, message->data, (int) message->length);
                         if (sent == (ssize_t) message->length) {
@@ -410,9 +409,9 @@ namespace uS {
                 const char *family;
             };
 
-            Address getAddress();
+            Address getAddress() const;
 
-            void setNoDelay(int enable) {
+            void setNoDelay(int enable) const {
                 setsockopt(getFd(), IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(int));
             }
 
