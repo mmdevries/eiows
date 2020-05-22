@@ -241,12 +241,10 @@ namespace uWS {
                 } else {
                     if (opCode == PING) {
                         webSocket->send(data, length, (OpCode) OpCode::PONG);
-                        group->pingHandler(webSocket, data, length);
                         if (webSocket->isClosed() || webSocket->isShuttingDown()) {
                             return true;
                         }
                     } else if (opCode == PONG) {
-                        group->pongHandler(webSocket, data, length);
                         if (webSocket->isClosed() || webSocket->isShuttingDown()) {
                             return true;
                         }
@@ -265,12 +263,10 @@ namespace uWS {
                     } else {
                         if (opCode == PING) {
                             webSocket->send(controlBuffer, webSocket->controlTipLength, (OpCode) OpCode::PONG);
-                            group->pingHandler(webSocket, controlBuffer, webSocket->controlTipLength);
                             if (webSocket->isClosed() || webSocket->isShuttingDown()) {
                                 return true;
                             }
                         } else if (opCode == PONG) {
-                            group->pongHandler(webSocket, controlBuffer, webSocket->controlTipLength);
                             if (webSocket->isClosed() || webSocket->isShuttingDown()) {
                                 return true;
                             }

@@ -48,8 +48,6 @@ namespace uWS {
             transferHandler = [](WebSocket *) {};
             messageHandler = [](WebSocket *, char *, size_t, OpCode) {};
             disconnectionHandler = [](WebSocket *, int, char *, size_t) {};
-            pingHandler = pongHandler = [](WebSocket *, char *, size_t) {};
-            errorHandler = [](int, void *) {};
             this->extensionOptions |= CLIENT_NO_CONTEXT_TAKEOVER | SERVER_NO_CONTEXT_TAKEOVER;
         }
 

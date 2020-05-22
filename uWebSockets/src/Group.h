@@ -22,15 +22,10 @@ namespace uWS {
             std::function<void(WebSocket *)> transferHandler;
             std::function<void(WebSocket *, char *message, size_t length, OpCode opCode)> messageHandler;
             std::function<void(WebSocket *, int code, char *message, size_t length)> disconnectionHandler;
-            std::function<void(WebSocket *, char *, size_t)> pingHandler;
-            std::function<void(int, void *)> errorHandler;
 
             unsigned int maxPayload;
             Hub *hub;
             int extensionOptions;
-            const char *userPingMessage;
-            size_t userPingMessageLength;
-            OpCode pingMessageType;
             std::stack<uS::Poll *> iterators;
 
             // todo: cannot be named user, collides with parent!
@@ -44,8 +39,6 @@ namespace uWS {
             Group(int extensionOptions, unsigned int maxPayload, Hub *hub, uS::NodeData *nodeData);
 
         public:
-            std::function<void(WebSocket *, char *, size_t)> pongHandler;
-
             void onConnection(const std::function<void(WebSocket *)> &handler);
             void onMessage(const std::function<void(WebSocket *, char *, size_t, OpCode)> &handler);
             void onDisconnection(const std::function<void(WebSocket *, int code, char *message, size_t length)> &handler);

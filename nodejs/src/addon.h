@@ -103,7 +103,7 @@ class NativeString {
 };
 
 struct GroupData {
-    Persistent<Function> connectionHandler, messageHandler, disconnectionHandler, pingHandler, pongHandler, errorHandler;
+    Persistent<Function> connectionHandler, messageHandler, disconnectionHandler;
     int size = 0;
 };
 
@@ -281,10 +281,7 @@ void onMessage(const FunctionCallbackInfo<Value> &args) {
 
     messageCallback->Reset(isolate, Local<Function>::Cast(args[1]));
     group->onMessage([isolate, messageCallback, group](uWS::WebSocket *webSocket, const char *message, size_t length, uWS::OpCode opCode) {
-        if(length == 1 && message[0] == 65) {
-            // emit pong event is we get pong from the client
-            group->pongHandler(webSocket, nullptr, 0);
-        } else {
+        if(length != 1 || message[0] != 65) {
             HandleScope hs(isolate);
             Local<Value> argv[] = {wrapMessage(message, length, opCode, isolate),
             getDataV8(webSocket, isolate)};
