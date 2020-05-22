@@ -433,26 +433,19 @@ namespace uS {
 
             void shutdown() {
                 if (ssl) {
-                    int ret = SSL_shutdown(ssl);
-                    if (ret == 0) {
-                        ret = SSL_shutdown(ssl);
-                    }
-                } else {
-                   ::shutdown(getFd(), SHUT_WR);
+                    SSL_shutdown(ssl);
                 }
+                ::shutdown(getFd(), SHUT_WR);
             }
 
             template <class T>
                 void closeSocket() {
-                    uv_os_sock_t fd = getFd();
-                    Context *netContext = nodeData->netContext;
-                    stop(nodeData->loop);
-                    netContext->closeSocket(fd);
-
                     if (ssl) {
                         SSL_free(ssl);
                     }
+                    ::close(getFd());
 
+                    stop(nodeData->loop);
                     Poll::close(nodeData->loop, [](Poll *p) {
                        delete (T *) p;
                     });

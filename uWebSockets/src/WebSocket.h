@@ -4,6 +4,7 @@
 #include "WebSocketProtocol.h"
 #include "Socket.h"
 
+
 namespace uWS {
     struct Group;
 
@@ -23,7 +24,7 @@ namespace uWS {
             WebSocket(unsigned int maxPayload, bool perMessageDeflate, uS::Socket *socket);
 
             static uS::Socket *onData(uS::Socket *s, char *data, size_t length);
-            static void onEnd(uS::Socket *s, int code = 1006);
+            static void onEnd(uS::Socket *s);
             using uS::Socket::closeSocket;
 
             static bool refusePayloadLength(uint64_t length, WebSocketState *webSocketState) {

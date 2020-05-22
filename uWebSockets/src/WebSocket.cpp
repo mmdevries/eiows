@@ -132,9 +132,13 @@ namespace uWS {
      * Hints: Close code and message will be what you pass yourself.
      *
      */
+
     void WebSocket::close(int code, const char *message, size_t length) {
         static const int MAX_CLOSE_PAYLOAD = 123;
         length = std::min<size_t>(MAX_CLOSE_PAYLOAD, length);
+        Group::from(this)->removeWebSocket(this);
+        Group::from(this)->disconnectionHandler(this, code, (char *) message, length);
+
         setShuttingDown(true);
 
         char closePayload[MAX_CLOSE_PAYLOAD + 2];
@@ -143,16 +147,16 @@ namespace uWS {
             if (!cancelled) {
                 p->shutdown();
             }
+            WebSocket::onEnd(p);
         });
-
-        WebSocket::onEnd(this, code);
     }
 
-    void WebSocket::onEnd(uS::Socket *s, int code) {
+    void WebSocket::onEnd(uS::Socket *s) {
         WebSocket *webSocket = static_cast<WebSocket *>(s);
-
-        Group::from(webSocket)->removeWebSocket(webSocket);
-        Group::from(webSocket)->disconnectionHandler(webSocket, code, nullptr, 0);
+        if (!webSocket->isShuttingDown()) {
+            Group::from(webSocket)->removeWebSocket(webSocket);
+            Group::from(webSocket)->disconnectionHandler(webSocket, 1006, nullptr, 0);
+        }
 
         webSocket->template closeSocket<WebSocket>();
 
@@ -174,6 +178,7 @@ namespace uWS {
             webSocket->slidingDeflateWindow = nullptr;
         }
     }
+
 
     bool WebSocket::handleFragment(char *data, size_t length, unsigned int remainingBytes, int opCode, bool fin, WebSocketState *webSocketState) {
         WebSocket *webSocket = static_cast<WebSocket *>(webSocketState);
