@@ -21,7 +21,7 @@ namespace uWS {
 
             void *slidingDeflateWindow = nullptr;
 
-            WebSocket(unsigned int maxPayload, bool perMessageDeflate, uS::Socket *socket);
+            WebSocket(unsigned int maxP, bool perMessageDeflate, uS::Socket *socket);
 
             static uS::Socket *onData(uS::Socket *s, char *data, size_t length);
             static void onEnd(uS::Socket *s);

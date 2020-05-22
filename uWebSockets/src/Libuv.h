@@ -66,6 +66,7 @@ namespace uS {
         Poll(Loop *loop, uv_os_sock_t fd) {
             uv_poll = new uv_poll_t;
             uv_poll_init_socket(loop, uv_poll, fd);
+            cb = nullptr;
         }
 
         Poll(Poll &&other) {

@@ -9,6 +9,7 @@
 
 namespace uWS {
     enum OpCode : unsigned char {
+        NONE = 0,
         TEXT = 1,
         BINARY = 2,
         CLOSE = 8,
@@ -31,8 +32,8 @@ namespace uWS {
                 unsigned int lastFin : 1;
 
                 // 15 bytes
-                unsigned char spill[LONG_MESSAGE_HEADER - 1];
-                OpCode opCode[2];
+                unsigned char spill[LONG_MESSAGE_HEADER - 1] = { 0 };
+                OpCode opCode[2] = { NONE };
 
                 State() {
                     wantsHead = true;

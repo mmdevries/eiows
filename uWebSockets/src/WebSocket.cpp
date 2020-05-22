@@ -3,9 +3,9 @@
 #include "Hub.h"
 
 namespace uWS {
-    WebSocket::WebSocket(unsigned int max, bool perMessageDeflate, uS::Socket *socket) :
+    WebSocket::WebSocket(unsigned int maxP, bool perMessageDeflate, uS::Socket *socket) :
         uS::Socket(std::move(*socket)) {
-        maxPayload = max;
+        maxPayload = maxP;
         compressionStatus = perMessageDeflate ? CompressionStatus::ENABLED : CompressionStatus::DISABLED;
 
         // if we are created in a group with sliding deflate window allocate it here
