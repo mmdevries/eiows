@@ -268,7 +268,7 @@ namespace uS {
                 return messagePtr;
             }
 
-            static void freeMessage(Queue::Message *message) {
+            void freeMessage(Queue::Message *message) {
                 delete [] (char *) message;
             }
 
@@ -438,12 +438,13 @@ namespace uS {
 
             template <class T>
                 void closeSocket() {
+                    uv_os_sock_t fd = getFd();
+                    Context *netContext = nodeData->netContext;
+                    stop(nodeData->loop);
                     if (ssl) {
                         SSL_free(ssl);
                     }
-                    ::close(getFd());
-
-                    stop(nodeData->loop);
+                    netContext->closeSocket(fd);
                     Poll::close(nodeData->loop, [](Poll *p) {
                        delete (T *) p;
                     });
