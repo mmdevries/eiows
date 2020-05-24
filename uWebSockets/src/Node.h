@@ -13,7 +13,7 @@ namespace uS {
             std::recursive_mutex asyncMutex;
 
         public:
-            Node(int recvLength = 1024, int prePadding = 0, int postPadding = 0, bool useDefaultLoop = false);
+            Node(int recvLength = 1024, int prePadding = 0, int postPadding = 0);
             ~Node();
 
             Loop *getLoop() {

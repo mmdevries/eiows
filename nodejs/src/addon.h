@@ -41,7 +41,7 @@ MaybeLocal<Value> Callback(Isolate *isolate, Local<Function> f, int argc, Local<
     return node::MakeCallback(isolate, isolate->GetCurrentContext()->Global(), f, argc, argv);
 }
 
-uWS::Hub hub(0, true);
+uWS::Hub hub(0);
 uv_check_t check;
 Persistent<Function> noop;
 

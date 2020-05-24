@@ -36,8 +36,8 @@ namespace uWS {
 
             void upgrade(uv_os_sock_t fd, const char *secKey, SSL *ssl, const char *extensions, size_t extensionsLength, const char *subprotocol, size_t subprotocolLength, Group *serverGroup = nullptr);
 
-            Hub(int extensionOptions = 0, bool useDefaultLoop = false, unsigned int maxPayload = 16777216) : 
-                uS::Node(LARGE_BUFFER_SIZE, WebSocketProtocol<WebSocket>::CONSUME_PRE_PADDING, WebSocketProtocol<WebSocket>::CONSUME_POST_PADDING, useDefaultLoop),
+            Hub(int extensionOptions = 0, unsigned int maxPayload = 16777216) :
+                uS::Node(LARGE_BUFFER_SIZE, WebSocketProtocol<WebSocket>::CONSUME_PRE_PADDING, WebSocketProtocol<WebSocket>::CONSUME_POST_PADDING),
                 Group(extensionOptions, maxPayload, this, nodeData) {
                     inflateInit2(&inflationStream, -15);
                     zlibBuffer = new char[LARGE_BUFFER_SIZE];

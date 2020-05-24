@@ -1,14 +1,14 @@
 #include "Node.h"
 
 namespace uS {
-    Node::Node(int recvLength, int prePadding, int postPadding, bool useDefaultLoop) {
+    Node::Node(int recvLength, int prePadding, int postPadding) {
         nodeData = new NodeData;
         nodeData->recvBufferMemoryBlock = new char[recvLength];
         nodeData->recvBuffer = nodeData->recvBufferMemoryBlock + prePadding;
         nodeData->recvLength = recvLength - prePadding - postPadding;
 
         nodeData->tid = pthread_self();
-        loop = Loop::createLoop(useDefaultLoop);
+        loop = Loop::createLoop();
 
         // each node has a context
         nodeData->netContext = new Context();
@@ -45,6 +45,5 @@ namespace uS {
         delete [] nodeData->preAlloc;
         delete nodeData->netContext;
         delete nodeData;
-        loop->destroy();
     }
 }
