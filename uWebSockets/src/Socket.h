@@ -458,11 +458,6 @@ namespace uS {
             friend class Node;
             friend struct NodeData;
     };
-
-    struct ListenSocket : Socket {
-        ListenSocket(NodeData *nodeData, Loop *loop, uv_os_sock_t fd, SSL *ssl) : Socket(nodeData, loop, fd, ssl) {}
-        uS::TLS::Context sslContext;
-    };
 }
 
 #endif // SOCKET_UWS_H

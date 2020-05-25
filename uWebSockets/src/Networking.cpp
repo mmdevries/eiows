@@ -1,36 +1,6 @@
 #include "Networking.h"
 
 namespace uS {
-    namespace TLS {
-        Context::Context(const Context &other)
-        {
-            if (other.context) {
-                context = other.context;
-                SSL_CTX_up_ref(context);
-            }
-        }
-
-        Context &Context::operator=(const Context &other) {
-            if (other.context) {
-                context = other.context;
-                SSL_CTX_up_ref(context);
-            }
-            return *this;
-        }
-
-        Context::~Context()
-        {
-            if (context) {
-                SSL_CTX_free(context);
-            }
-        }
-
-        struct Init {
-            Init() {SSL_library_init();}
-            ~Init() {/*EVP_cleanup();*/}
-        } init;
-    }
-
 #ifndef _WIN32
     struct Init {
         Init() {signal(SIGPIPE, SIG_IGN);}

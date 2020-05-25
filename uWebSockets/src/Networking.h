@@ -109,28 +109,6 @@ namespace uS {
         }
     };
 
-    namespace TLS {
-        class WIN32_EXPORT Context {
-            protected:
-                SSL_CTX *context = nullptr;
-
-            public:
-                Context(SSL_CTX *context) : context(context) {}
-
-                Context() = default;
-                Context(const Context &other);
-                Context &operator=(const Context &other);
-                ~Context();
-                operator bool() const {
-                    return context;
-                }
-
-                SSL_CTX *getNativeContext() {
-                    return context;
-                }
-        };
-    }
-
     struct Socket;
 
     // NodeData is like a Context, maybe merge them?
@@ -143,7 +121,6 @@ namespace uS {
         void *user = nullptr;
         static const int preAllocMaxSize = 1024;
         char **preAlloc;
-        SSL_CTX *clientContext;
 
         Async *async = nullptr;
         pthread_t tid;
