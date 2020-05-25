@@ -46,13 +46,6 @@ inline int setsockopt(SOCKET fd, int level, int optname, const void *optval, soc
     return setsockopt(fd, level, optname, (const char *) optval, optlen);
 }
 
-inline SOCKET dup(SOCKET socket) {
-    WSAPROTOCOL_INFOW pi;
-    if (WSADuplicateSocketW(socket, GetCurrentProcessId(), &pi) == SOCKET_ERROR) {
-        return INVALID_SOCKET;
-    }
-    return WSASocketW(pi.iAddressFamily, pi.iSocketType, pi.iProtocol, &pi, 0, WSA_FLAG_OVERLAPPED);
-}
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -97,44 +90,6 @@ namespace uS {
 #ifdef USE_MTCP
             mtcp_destroy_context(mctx);
 #endif
-        }
-
-        // returns INVALID_SOCKET on error
-        static uv_os_sock_t acceptSocket(uv_os_sock_t fd) {
-            uv_os_sock_t acceptedFd;
-#if defined(SOCK_CLOEXEC) && defined(SOCK_NONBLOCK)
-            // Linux, FreeBSD
-            acceptedFd = accept4(fd, nullptr, nullptr, SOCK_CLOEXEC | SOCK_NONBLOCK);
-#else
-            // Windows, OS X
-            acceptedFd = accept(fd, nullptr, nullptr);
-#endif
-
-#ifdef __APPLE__
-            if (acceptedFd != INVALID_SOCKET) {
-                int noSigpipe = 1;
-                setsockopt(acceptedFd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(int));
-            }
-#endif
-            return acceptedFd;
-        }
-
-        // returns INVALID_SOCKET on error
-        static uv_os_sock_t createSocket(int domain, int type, int protocol) {
-            int flags = 0;
-#if defined(SOCK_CLOEXEC) && defined(SOCK_NONBLOCK)
-            flags = SOCK_CLOEXEC | SOCK_NONBLOCK;
-#endif
-
-            uv_os_sock_t createdFd = socket(domain, type | flags, protocol);
-
-#ifdef __APPLE__
-            if (createdFd != INVALID_SOCKET) {
-                int noSigpipe = 1;
-                setsockopt(createdFd, SOL_SOCKET, SO_NOSIGPIPE, &noSigpipe, sizeof(int));
-            }
-#endif
-            return createdFd;
         }
 
         static void closeSocket(uv_os_sock_t fd) {
