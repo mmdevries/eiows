@@ -85,13 +85,7 @@ namespace uS {
             return cb;
         }
 
-        void reInit(Loop *loop, uv_os_sock_t fd) {
-            delete uv_poll;
-            uv_poll = new uv_poll_t;
-            uv_poll_init_socket(loop, uv_poll, fd);
-        }
-
-        void start(Loop *, Poll *self, int events) {
+        void start(Poll *self, int events) {
             uv_poll->data = self;
             uv_poll_start(uv_poll, events, [](uv_poll_t *p, int status, int events) {
                 Poll *self = static_cast<Poll *>(p->data);
@@ -99,15 +93,15 @@ namespace uS {
             });
         }
 
-        void change(Loop *, Poll *self, int events) {
-            start(nullptr, self, events);
+        void change(Poll *self, int events) {
+            start(self, events);
         }
 
-        void stop(Loop *loop) {
+        void stop() {
             uv_poll_stop(uv_poll);
         }
 
-        void close(Loop *loop, void (*cb)(Poll *)) {
+        void close(void (*cb)(Poll *)) {
             this->cb = (void(*)(Poll *, int, int)) cb;
             uv_close((uv_handle_t *) uv_poll, [](uv_handle_t *p) {
                 Poll *poll = static_cast<Poll *>(p->data);

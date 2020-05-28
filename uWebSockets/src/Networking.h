@@ -116,7 +116,6 @@ namespace uS {
         char *recvBufferMemoryBlock;
         char *recvBuffer;
         int recvLength;
-        Loop *loop;
         uS::Context *netContext;
         void *user = nullptr;
         static const int preAllocMaxSize = 1024;

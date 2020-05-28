@@ -109,19 +109,10 @@ namespace uWS {
      */
     void WebSocket::transfer(Group *group) {
         Group::from(this)->removeWebSocket(this);
-        if (group->loop == Group::from(this)->loop) {
-            // fast path
-            this->nodeData = group;
-            Group::from(this)->addWebSocket(this);
-            Group::from(this)->transferHandler(this);
-        } else {
-            // slow path
-            uS::Socket::transfer((uS::NodeData *) group, [](Poll *p) {
-                WebSocket *webSocket = static_cast<WebSocket *>(p);
-                Group::from(webSocket)->addWebSocket(webSocket);
-                Group::from(webSocket)->transferHandler(webSocket);
-            });
-        }
+
+        this->nodeData = group;
+        Group::from(this)->addWebSocket(this);
+        Group::from(this)->transferHandler(this);
     }
 
     /*

@@ -91,7 +91,7 @@ namespace uWS {
             serverGroup = &getDefaultGroup();
         }
 
-        uS::Socket s((uS::NodeData *) serverGroup, serverGroup->loop, fd, ssl);
+        uS::Socket s((uS::NodeData *) serverGroup, this->getLoop(), fd, ssl);
         s.setNoDelay(true);
 
         bool perMessageDeflate = false;
@@ -106,7 +106,7 @@ namespace uWS {
         webSocket->upgrade(secKey, extensionsResponse, subprotocol, subprotocolLength);
 
         webSocket->setState<WebSocket>();
-        webSocket->change(webSocket->nodeData->loop, webSocket, webSocket->setPoll(UV_READABLE));
+        webSocket->change(webSocket, webSocket->setPoll(UV_READABLE));
         serverGroup->addWebSocket(webSocket);
         serverGroup->connectionHandler(webSocket);
     }

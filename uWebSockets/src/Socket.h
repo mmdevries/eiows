@@ -84,24 +84,6 @@ namespace uS {
                 state.shuttingDown = shuttingDown;
             }
 
-            void transfer(NodeData *nodeData, void (*cb)(Poll *)) {
-                // userData is invalid from now on till onTransfer
-                setUserData(new TransferData({getFd(), ssl, getCb(), getPoll(), getUserData(), nodeData, cb}));
-                stop(this->nodeData->loop);
-                close(this->nodeData->loop, [](Poll *p) {
-                    Socket *s = static_cast<Socket *>(p);
-                    TransferData *transferData = static_cast<TransferData *>(s->getUserData());
-                    transferData->destination->asyncMutex->lock();
-                    bool wasEmpty = transferData->destination->transferQueue.empty();
-                    transferData->destination->transferQueue.push_back(s);
-                    transferData->destination->asyncMutex->unlock();
-
-                    if (wasEmpty) {
-                        transferData->destination->async->send();
-                    }
-                });
-            }
-
             void changePoll(Socket *socket) {
                 if (socket->nodeData->tid != pthread_self()) {
                     socket->nodeData->asyncMutex->lock();
@@ -109,7 +91,7 @@ namespace uS {
                     socket->nodeData->asyncMutex->unlock();
                     socket->nodeData->async->send();
                 } else {
-                    change(socket->nodeData->loop, socket, socket->getPoll());
+                    change(socket, socket->getPoll());
                 }
             }
 
@@ -134,7 +116,7 @@ namespace uS {
                                 socket->messageQueue.pop();
                                 if (socket->messageQueue.empty()) {
                                     if ((socket->state.poll & UV_WRITABLE) && SSL_want(socket->ssl) != SSL_WRITING) {
-                                        socket->change(socket->nodeData->loop, socket, socket->setPoll(UV_READABLE));
+                                        socket->change(socket, socket->setPoll(UV_READABLE));
                                     }
                                     break;
                                 }
@@ -144,7 +126,7 @@ namespace uS {
                                         break;
                                     case SSL_ERROR_WANT_WRITE:
                                         if ((socket->getPoll() & UV_WRITABLE) == 0) {
-                                            socket->change(socket->nodeData->loop, socket, socket->setPoll(socket->getPoll() | UV_WRITABLE));
+                                            socket->change(socket, socket->setPoll(socket->getPoll() | UV_WRITABLE));
                                         }
                                         break;
                                     default:
@@ -166,7 +148,7 @@ namespace uS {
                                         break;
                                     case SSL_ERROR_WANT_WRITE:
                                         if ((socket->getPoll() & UV_WRITABLE) == 0) {
-                                            socket->change(socket->nodeData->loop, socket, socket->setPoll(socket->getPoll() | UV_WRITABLE));
+                                            socket->change(socket, socket->setPoll(socket->getPoll() | UV_WRITABLE));
                                         }
                                         break;
                                     default:
@@ -209,7 +191,7 @@ namespace uS {
                                     socket->messageQueue.pop();
                                     if (socket->messageQueue.empty()) {
                                         // todo, remove bit, don't set directly
-                                        socket->change(socket->nodeData->loop, socket, socket->setPoll(UV_READABLE));
+                                        socket->change(socket, socket->setPoll(UV_READABLE));
                                         break;
                                     }
                                 } else if (sent == SOCKET_ERROR) {
@@ -445,8 +427,8 @@ namespace uS {
                     }
                     netContext->closeSocket(fd);
 
-                    stop(nodeData->loop);
-                    Poll::close(nodeData->loop, [](Poll *p) {
+                    stop();
+                    Poll::close([](Poll *p) {
                        delete (T *) p;
                     });
                 }
