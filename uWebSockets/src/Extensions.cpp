@@ -21,7 +21,7 @@ namespace uWS {
             int serverMaxWindowBits = 0;
             int clientMaxWindowBits = 0;
 
-            int getToken(const char *&in, const char *stop);
+            static int getToken(const char *&in, const char *stop);
             ExtensionsParser(const char *data, size_t length);
     };
 
