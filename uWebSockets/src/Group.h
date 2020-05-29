@@ -19,7 +19,6 @@ namespace uWS {
             friend struct WebSocket;
 
             std::function<void(WebSocket *)> connectionHandler = [](WebSocket *) {};
-            std::function<void(WebSocket *)> transferHandler = [](WebSocket *) {};
             std::function<void(WebSocket *, char *message, size_t length, OpCode opCode)> messageHandler = [](WebSocket *, char *, size_t, OpCode) {};
             std::function<void(WebSocket *, int code, char *message, size_t length)> disconnectionHandler = [](WebSocket *, int, char *, size_t) {};
 

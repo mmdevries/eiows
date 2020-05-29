@@ -95,27 +95,6 @@ namespace uWS {
     }
 
     /*
-     * Transfers this WebSocket from its current Group to specified Group.
-     *
-     * Receiving Group has to have called listen(uWS::TRANSFERS) prior.
-     *
-     * Hints: Useful to implement subprotocols on the same thread and Loop
-     * or to transfer WebSockets between threads at any point (dynamic load balancing).
-     *
-     * Warning: From the point of call to the point of onTransfer, this WebSocket
-     * is invalid and cannot be used. What you put in is not guaranteed to be what you
-     * get in onTransfer, the only guaranteed consistency is passed userData is the userData
-     * of given WebSocket in onTransfer. Use setUserData and getUserData to identify the WebSocket.
-     */
-    void WebSocket::transfer(Group *group) {
-        Group::from(this)->removeWebSocket(this);
-
-        this->nodeData = group;
-        Group::from(this)->addWebSocket(this);
-        Group::from(this)->transferHandler(this);
-    }
-
-    /*
      * Immediately calls onDisconnection of its Group and begins a passive
      * WebSocket closedown handshake in the background (might succeed or not,
      * we don't care).

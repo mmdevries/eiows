@@ -62,7 +62,6 @@ namespace uWS {
 
             // Not thread safe
             void close(int code = 1000, const char *message = nullptr, size_t length = 0);
-            void transfer(Group *group);
 
             // Thread safe
             void terminate();

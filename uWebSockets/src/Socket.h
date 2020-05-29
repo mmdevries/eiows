@@ -4,23 +4,6 @@
 #include "Networking.h"
 
 namespace uS {
-    struct TransferData {
-        // Connection state
-        uv_os_sock_t fd;
-        SSL *ssl;
-
-        // Poll state
-        void (*pollCb)(Poll *, int, int);
-        int pollEvents;
-
-        // User state
-        void *userData;
-
-        // Destination
-        NodeData *destination;
-        void (*transferCb)(Poll *);
-    };
-
     // perfectly 64 bytes (4 + 60)
     struct WIN32_EXPORT Socket : Poll {
         protected:
