@@ -15,6 +15,7 @@ namespace uS {
             SSL *ssl;
             void *user = nullptr;
             NodeData *nodeData;
+            const int HEADER_LENGTH = 10;
 
             struct Queue {
                 struct Message {
@@ -286,7 +287,7 @@ namespace uS {
 
             template <class T, class D>
                 void sendTransformed(const char *message, size_t length, void(*callback)(void *socket, void *data, bool cancelled, void *reserved), void *callbackData, D transformData) {
-                    size_t estimatedLength = T::estimate(message, length) + sizeof(Queue::Message);
+                    size_t estimatedLength = length + HEADER_LENGTH + sizeof(Queue::Message);
 
                     if (hasEmptyQueue()) {
                         if (estimatedLength <= uS::NodeData::preAllocMaxSize) {

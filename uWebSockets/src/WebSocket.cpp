@@ -35,8 +35,6 @@ namespace uWS {
         }
 #endif
 
-        const int HEADER_LENGTH = 10;
-
         struct TransformData {
             OpCode opCode;
             bool compress;
@@ -44,16 +42,11 @@ namespace uWS {
         } transformData = {opCode, compress && compressionStatus == WebSocket::CompressionStatus::ENABLED && opCode < 3, this};
 
         struct WebSocketTransformer {
-            static size_t estimate(const char *data, size_t length) {
-                return length + HEADER_LENGTH;
-            }
-
             static size_t transform(const char *src, char *dst, size_t length, TransformData transformData) {
                 if (transformData.compress) {
                     char *deflated = Group::from(transformData.s)->hub->deflate((char *) src, length, (z_stream *) transformData.s->slidingDeflateWindow);
                     return WebSocketProtocol<WebSocket>::formatMessage(dst, deflated, length, transformData.opCode, length, true);
                 }
-
                 return WebSocketProtocol<WebSocket>::formatMessage(dst, src, length, transformData.opCode, length, false);
             }
         };
