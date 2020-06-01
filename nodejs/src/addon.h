@@ -37,10 +37,6 @@ class TLSWrapSSLGetter : public node::TLSWrap {
 using namespace std;
 using namespace v8;
 
-MaybeLocal<Value> Callback(Isolate *isolate, Local<Function> f, int argc, Local<Value> *argv) {
-    return node::MakeCallback(isolate, isolate->GetCurrentContext()->Global(), f, argc, argv);
-}
-
 uWS::Hub hub(0);
 uv_check_t check;
 Persistent<Function> noop;
@@ -51,7 +47,8 @@ void registerCheck(Isolate *isolate) {
     uv_check_start(&check, [](uv_check_t *check) {
         Isolate *isolate = (Isolate *)check->data;
         HandleScope hs(isolate);
-        Callback(isolate, Local<Function>::New(isolate, noop), 0, nullptr);
+        // TODO: Check if we can use new callbback
+        node::MakeCallback(isolate, isolate->GetCurrentContext()->Global(), Local<Function>::New(isolate, noop), 0, nullptr);
     });
     uv_unref((uv_handle_t *)&check);
 }
@@ -182,7 +179,7 @@ void sendCallback(uWS::WebSocket *webSocket, void *data, bool cancelled, void *r
     SendCallbackData *sc = static_cast<SendCallbackData *>(data);
     if (!cancelled) {
         HandleScope hs(sc->isolate);
-        Callback(sc->isolate, Local<Function>::New(sc->isolate, sc->jsCallback), 0, nullptr);
+        Local<Function>::New(sc->isolate, sc->jsCallback)->Call(sc->isolate->GetCurrentContext(), Null(sc->isolate), 0, nullptr);
     }
     sc->jsCallback.Reset();
     delete sc;
@@ -268,7 +265,7 @@ void onConnection(const FunctionCallbackInfo<Value> &args) {
         groupData->size++;
         HandleScope hs(isolate);
         Local<Value> argv[] = {wrapSocket(webSocket, isolate)};
-        Callback(isolate, Local<Function>::New(isolate, *connectionCallback), 1, argv);
+        Local<Function>::New(isolate, *connectionCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 1, argv);
     });
 }
 
@@ -285,7 +282,7 @@ void onMessage(const FunctionCallbackInfo<Value> &args) {
             HandleScope hs(isolate);
             Local<Value> argv[] = {wrapMessage(message, length, opCode, isolate),
             getDataV8(webSocket, isolate)};
-            Callback(isolate, Local<Function>::New(isolate, *messageCallback), 2, argv);
+            Local<Function>::New(isolate, *messageCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 2, argv);
         }
     });
 }
@@ -305,7 +302,7 @@ void onDisconnection(const FunctionCallbackInfo<Value> &args) {
         wrapSocket(webSocket, isolate), Integer::New(isolate, code),
         wrapMessage(message, length, uWS::OpCode::CLOSE, isolate),
         getDataV8(webSocket, isolate)};
-        Callback(isolate, Local<Function>::New(isolate, *disconnectionCallback), 4, argv);
+        Local<Function>::New(isolate, *disconnectionCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 4, argv);
     });
 }
 
