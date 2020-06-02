@@ -213,7 +213,7 @@ namespace uS {
                     }
                 }
 
-            bool hasEmptyQueue() {
+            bool hasEmptyQueue() const {
                 return messageQueue.empty();
             }
 
