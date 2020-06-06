@@ -16,15 +16,17 @@ class FileHandleReadWrap;
 class BindingData : public BaseObject {
  public:
   explicit BindingData(Environment* env, v8::Local<v8::Object> wrap)
-    : BaseObject(env, wrap),
-      stats_field_array(env->isolate(), kFsStatsBufferLength),
-      stats_field_bigint_array(env->isolate(), kFsStatsBufferLength) {}
+      : BaseObject(env, wrap),
+        stats_field_array(env->isolate(), kFsStatsBufferLength),
+        stats_field_bigint_array(env->isolate(), kFsStatsBufferLength) {}
 
   AliasedFloat64Array stats_field_array;
   AliasedBigUint64Array stats_field_bigint_array;
 
   std::vector<BaseObjectPtr<FileHandleReadWrap>>
       file_handle_read_wrap_freelist;
+
+  static constexpr FastStringKey binding_data_name { "fs" };
 
   void MemoryInfo(MemoryTracker* tracker) const override;
   SET_SELF_SIZE(BindingData)
@@ -182,6 +184,7 @@ class FSReqAfterScope final {
  public:
   FSReqAfterScope(FSReqBase* wrap, uv_fs_t* req);
   ~FSReqAfterScope();
+  void Clear();
 
   bool Proceed();
 
@@ -193,7 +196,7 @@ class FSReqAfterScope final {
   FSReqAfterScope& operator=(const FSReqAfterScope&&) = delete;
 
  private:
-  FSReqBase* wrap_ = nullptr;
+  BaseObjectPtr<FSReqBase> wrap_;
   uv_fs_t* req_ = nullptr;
   v8::HandleScope handle_scope_;
   v8::Context::Scope context_scope_;

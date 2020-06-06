@@ -25,6 +25,7 @@
 #if defined(NODE_WANT_INTERNALS) && NODE_WANT_INTERNALS
 
 #include "aliased_buffer.h"
+#include "callback_queue-inl.h"
 #include "env.h"
 #include "node.h"
 #include "util-inl.h"
@@ -287,6 +288,10 @@ inline void Environment::AssignToContext(v8::Local<v8::Context> context,
   // Used by Environment::GetCurrent to know that we are on a node context.
   context->SetAlignedPointerInEmbedderData(
     ContextEmbedderIndex::kContextTag, Environment::kNodeContextTagPtr);
+  // Used to retrieve bindings
+  context->SetAlignedPointerInEmbedderData(
+      ContextEmbedderIndex::kBindingListIndex, &(this->bindings_));
+
 #if HAVE_INSPECTOR
   inspector_agent()->ContextCreated(context, info);
 #endif  // HAVE_INSPECTOR
@@ -318,55 +323,55 @@ inline Environment* Environment::GetCurrent(v8::Local<v8::Context> context) {
 
 inline Environment* Environment::GetCurrent(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
-  return GetFromCallbackData(info.Data());
+  return GetCurrent(info.GetIsolate()->GetCurrentContext());
 }
 
 template <typename T>
 inline Environment* Environment::GetCurrent(
     const v8::PropertyCallbackInfo<T>& info) {
-  return GetFromCallbackData(info.Data());
+  return GetCurrent(info.GetIsolate()->GetCurrentContext());
 }
 
-Environment* Environment::GetFromCallbackData(v8::Local<v8::Value> val) {
-  DCHECK(val->IsObject());
-  v8::Local<v8::Object> obj = val.As<v8::Object>();
-  DCHECK_GE(obj->InternalFieldCount(),
-            BaseObject::kInternalFieldCount);
-  Environment* env = Unwrap<BaseObject>(obj)->env();
-  DCHECK(env->as_callback_data_template()->HasInstance(obj));
-  return env;
+template <typename T, typename U>
+inline T* Environment::GetBindingData(const v8::PropertyCallbackInfo<U>& info) {
+  return GetBindingData<T>(info.GetIsolate()->GetCurrentContext());
 }
 
 template <typename T>
-Environment::BindingScope<T>::BindingScope(Environment* env) : env(env) {
-  v8::Local<v8::Object> callback_data;
-  if (!env->MakeBindingCallbackData<T>().ToLocal(&callback_data))
-    return;
-  data = Unwrap<T>(callback_data);
-
-  // No nesting allowed currently.
-  CHECK_EQ(env->current_callback_data(), env->as_callback_data());
-  env->set_current_callback_data(callback_data);
+inline T* Environment::GetBindingData(
+    const v8::FunctionCallbackInfo<v8::Value>& info) {
+  return GetBindingData<T>(info.GetIsolate()->GetCurrentContext());
 }
 
 template <typename T>
-Environment::BindingScope<T>::~BindingScope() {
-  env->set_current_callback_data(env->as_callback_data());
+inline T* Environment::GetBindingData(v8::Local<v8::Context> context) {
+  BindingDataStore* map = static_cast<BindingDataStore*>(
+      context->GetAlignedPointerFromEmbedderData(
+          ContextEmbedderIndex::kBindingListIndex));
+  DCHECK_NOT_NULL(map);
+  auto it = map->find(T::binding_data_name);
+  if (UNLIKELY(it == map->end())) return nullptr;
+  T* result = static_cast<T*>(it->second.get());
+  DCHECK_NOT_NULL(result);
+  DCHECK_EQ(result->env(), GetCurrent(context));
+  return result;
 }
 
 template <typename T>
-v8::MaybeLocal<v8::Object> Environment::MakeBindingCallbackData() {
-  v8::Local<v8::Function> ctor;
-  v8::Local<v8::Object> obj;
-  if (!as_callback_data_template()->GetFunction(context()).ToLocal(&ctor) ||
-      !ctor->NewInstance(context()).ToLocal(&obj)) {
-    return v8::MaybeLocal<v8::Object>();
-  }
-  T* data = new T(this, obj);
+inline T* Environment::AddBindingData(
+    v8::Local<v8::Context> context,
+    v8::Local<v8::Object> target) {
+  DCHECK_EQ(GetCurrent(context), this);
   // This won't compile if T is not a BaseObject subclass.
-  CHECK_EQ(data, static_cast<BaseObject*>(data));
-  data->MakeWeak();
-  return obj;
+  BaseObjectPtr<T> item = MakeDetachedBaseObject<T>(this, target);
+  BindingDataStore* map = static_cast<BindingDataStore*>(
+      context->GetAlignedPointerFromEmbedderData(
+          ContextEmbedderIndex::kBindingListIndex));
+  DCHECK_NOT_NULL(map);
+  auto result = map->emplace(T::binding_data_name, item);
+  CHECK(result.second);
+  DCHECK_EQ(GetBindingData<T>(context), item.get());
+  return item.get();
 }
 
 inline Environment* Environment::GetThreadLocalEnv() {
@@ -701,50 +706,9 @@ inline void IsolateData::set_options(
   options_ = std::move(options);
 }
 
-std::unique_ptr<Environment::NativeImmediateCallback>
-Environment::NativeImmediateQueue::Shift() {
-  std::unique_ptr<Environment::NativeImmediateCallback> ret = std::move(head_);
-  if (ret) {
-    head_ = ret->get_next();
-    if (!head_)
-      tail_ = nullptr;  // The queue is now empty.
-  }
-  size_--;
-  return ret;
-}
-
-void Environment::NativeImmediateQueue::Push(
-    std::unique_ptr<Environment::NativeImmediateCallback> cb) {
-  NativeImmediateCallback* prev_tail = tail_;
-
-  size_++;
-  tail_ = cb.get();
-  if (prev_tail != nullptr)
-    prev_tail->set_next(std::move(cb));
-  else
-    head_ = std::move(cb);
-}
-
-void Environment::NativeImmediateQueue::ConcatMove(
-    NativeImmediateQueue&& other) {
-  size_ += other.size_;
-  if (tail_ != nullptr)
-    tail_->set_next(std::move(other.head_));
-  else
-    head_ = std::move(other.head_);
-  tail_ = other.tail_;
-  other.tail_ = nullptr;
-  other.size_ = 0;
-}
-
-size_t Environment::NativeImmediateQueue::size() const {
-  return size_.load();
-}
-
 template <typename Fn>
 void Environment::CreateImmediate(Fn&& cb, bool ref) {
-  auto callback = std::make_unique<NativeImmediateCallbackImpl<Fn>>(
-      std::move(cb), ref);
+  auto callback = native_immediates_.CreateCallback(std::move(cb), ref);
   native_immediates_.Push(std::move(callback));
 }
 
@@ -763,9 +727,9 @@ void Environment::SetUnrefImmediate(Fn&& cb) {
 }
 
 template <typename Fn>
-void Environment::SetImmediateThreadsafe(Fn&& cb) {
-  auto callback = std::make_unique<NativeImmediateCallbackImpl<Fn>>(
-      std::move(cb), false);
+void Environment::SetImmediateThreadsafe(Fn&& cb, bool refed) {
+  auto callback =
+      native_immediates_threadsafe_.CreateCallback(std::move(cb), refed);
   {
     Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
     native_immediates_threadsafe_.Push(std::move(callback));
@@ -776,8 +740,8 @@ void Environment::SetImmediateThreadsafe(Fn&& cb) {
 
 template <typename Fn>
 void Environment::RequestInterrupt(Fn&& cb) {
-  auto callback = std::make_unique<NativeImmediateCallbackImpl<Fn>>(
-      std::move(cb), false);
+  auto callback =
+      native_immediates_interrupts_.CreateCallback(std::move(cb), false);
   {
     Mutex::ScopedLock lock(native_immediates_threadsafe_mutex_);
     native_immediates_interrupts_.Push(std::move(callback));
@@ -785,34 +749,6 @@ void Environment::RequestInterrupt(Fn&& cb) {
       uv_async_send(&task_queues_async_);
   }
   RequestInterruptFromV8();
-}
-
-Environment::NativeImmediateCallback::NativeImmediateCallback(bool refed)
-  : refed_(refed) {}
-
-bool Environment::NativeImmediateCallback::is_refed() const {
-  return refed_;
-}
-
-std::unique_ptr<Environment::NativeImmediateCallback>
-Environment::NativeImmediateCallback::get_next() {
-  return std::move(next_);
-}
-
-void Environment::NativeImmediateCallback::set_next(
-    std::unique_ptr<NativeImmediateCallback> next) {
-  next_ = std::move(next);
-}
-
-template <typename Fn>
-Environment::NativeImmediateCallbackImpl<Fn>::NativeImmediateCallbackImpl(
-    Fn&& callback, bool refed)
-  : NativeImmediateCallback(refed),
-    callback_(std::move(callback)) {}
-
-template <typename Fn>
-void Environment::NativeImmediateCallbackImpl<Fn>::Call(Environment* env) {
-  callback_(env);
 }
 
 inline bool Environment::can_call_into_js() const {
@@ -1077,8 +1013,7 @@ inline v8::Local<v8::FunctionTemplate>
                                      v8::Local<v8::Signature> signature,
                                      v8::ConstructorBehavior behavior,
                                      v8::SideEffectType side_effect_type) {
-  v8::Local<v8::Object> external = current_callback_data();
-  return v8::FunctionTemplate::New(isolate(), callback, external,
+  return v8::FunctionTemplate::New(isolate(), callback, v8::Local<v8::Value>(),
                                    signature, 0, behavior, side_effect_type);
 }
 
@@ -1177,13 +1112,6 @@ void Environment::RemoveCleanupHook(void (*fn)(void*), void* arg) {
   cleanup_hooks_.erase(search);
 }
 
-inline void Environment::RegisterFinalizationGroupForCleanup(
-    v8::Local<v8::FinalizationGroup> group) {
-  cleanup_finalization_groups_.emplace_back(isolate(), group);
-  DCHECK(task_queues_async_initialized_);
-  uv_async_send(&task_queues_async_);
-}
-
 size_t CleanupHookCallback::Hash::operator()(
     const CleanupHookCallback& cb) const {
   return std::hash<void*>()(cb.arg_);
@@ -1270,9 +1198,10 @@ void Environment::set_process_exit_handler(
   ENVIRONMENT_STRONG_PERSISTENT_VALUES(V)
 #undef V
 
-  inline v8::Local<v8::Context> Environment::context() const {
-    return PersistentToLocal::Strong(context_);
-  }
+v8::Local<v8::Context> Environment::context() const {
+  return PersistentToLocal::Strong(context_);
+}
+
 }  // namespace node
 
 // These two files depend on each other. Including base_object-inl.h after this
