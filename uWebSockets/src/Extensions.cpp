@@ -1,6 +1,6 @@
 #include "Extensions.h"
 
-namespace uWS {
+namespace eioWS {
 
     enum ExtensionTokens {
         TOK_PERMESSAGE_DEFLATE = 1838,

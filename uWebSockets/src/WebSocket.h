@@ -5,7 +5,7 @@
 #include "Socket.h"
 
 
-namespace uWS {
+namespace eioWS {
     struct Group;
 
     struct WIN32_EXPORT WebSocket : uS::Socket, WebSocketState {

@@ -15,4 +15,4 @@ void Main(Local<Object> exports)
     registerCheck(isolate);
 }
 
-NODE_MODULE(uws, Main)
+NODE_MODULE(eiows, Main)

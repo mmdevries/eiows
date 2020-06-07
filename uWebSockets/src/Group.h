@@ -6,7 +6,7 @@
 #include <functional>
 #include <stack>
 
-namespace uWS {
+namespace eioWS {
     enum ListenOptions {
         TRANSFERS
     };

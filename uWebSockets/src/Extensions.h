@@ -3,7 +3,7 @@
 
 #include <string>
 
-namespace uWS {
+namespace eioWS {
     enum Options : unsigned int {
         NO_OPTIONS = 0,
         PERMESSAGE_DEFLATE = 1,

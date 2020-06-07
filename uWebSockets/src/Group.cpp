@@ -1,7 +1,7 @@
 #include "Group.h"
 #include "Hub.h"
 
-namespace uWS {
+namespace eioWS {
     void Group::setUserData(void *user) {
         this->userData = user;
     }
@@ -60,7 +60,7 @@ namespace uWS {
     }
 
     void Group::close(int code, char *message, size_t length) {
-        forEach([code, message, length](uWS::WebSocket *ws) {
+        forEach([code, message, length](eioWS::WebSocket *ws) {
             ws->close(code, message, length);
         });
     }

@@ -1,13 +1,13 @@
 uws is a replacement module for ws which allows, but doesn't guarantee, significant performance and memory-usage improvements. This module is specifically only compatible with Node.js.
-This package is mainly meant for projects which depend on the performance of the “original uws package” in combination with Socket.IO and Express and it should work on Node 8, 10, 12, 13 and 14.
+This package is mainly meant for projects which depend on the performance of the “original uws package”. This package requires engine.io(3.4.2 or higher) and it should work on Node 8, 10, 12(v12.18.0 or higher), 13(v13.14.0 or higher) and 14(v14.4.0 or higher).
 
 Installation:
 
-npm install mmdevries/uws#2.9.12
+npm install eiows
 
 or
 
-yarn add mmdevries/uws#2.9.12
+yarn add eiows
 
 
 Example:
@@ -27,10 +27,9 @@ Example:
     server.listen(1443);
 
     var io = require("socket.io")(server, {
-        wsEngine: 'uws',
+        wsEngine: 'eiows',
         perMessageDeflate: {
-            threshold: 32768,
-            serverNoContextTakeover: false
+            threshold: 32768
         }
     });
 

@@ -43,7 +43,7 @@ class TLSWrapSSLGetter : public node::TLSWrap {
 using namespace std;
 using namespace v8;
 
-uWS::Hub hub(0);
+eioWS::Hub hub(0);
 uv_check_t check;
 Persistent<Function> noop;
 
@@ -111,28 +111,28 @@ struct GroupData {
 };
 
 void createGroup(const FunctionCallbackInfo<Value> &args) {
-    uWS::Group *group = hub.createGroup(args[0].As<Integer>()->Value(), args[1].As<Integer>()->Value());
+    eioWS::Group *group = hub.createGroup(args[0].As<Integer>()->Value(), args[1].As<Integer>()->Value());
     group->setUserData(new GroupData);
     args.GetReturnValue().Set(External::New(args.GetIsolate(), group));
 }
 
-inline Local<External> wrapSocket(uWS::WebSocket *webSocket, Isolate *isolate) {
+inline Local<External> wrapSocket(eioWS::WebSocket *webSocket, Isolate *isolate) {
     return External::New(isolate, webSocket);
 }
 
-inline uWS::WebSocket *unwrapSocket(Local<External> external) {
-    return (uWS::WebSocket *)external->Value();
+inline eioWS::WebSocket *unwrapSocket(Local<External> external) {
+    return (eioWS::WebSocket *)external->Value();
 }
 
-inline Local<Value> wrapMessage(const char *message, size_t length, uWS::OpCode opCode, Isolate *isolate) {
-    if (opCode == uWS::OpCode::BINARY) {
+inline Local<Value> wrapMessage(const char *message, size_t length, eioWS::OpCode opCode, Isolate *isolate) {
+    if (opCode == eioWS::OpCode::BINARY) {
         return node::Buffer::Copy(isolate, (char *)message, length).ToLocalChecked();
     } else {
         return String::NewFromUtf8(isolate, message, NewStringType::kNormal, length).ToLocalChecked();
     }
 }
 
-inline Local<Value> getDataV8(uWS::WebSocket *webSocket, Isolate *isolate) {
+inline Local<Value> getDataV8(eioWS::WebSocket *webSocket, Isolate *isolate) {
     return webSocket->getUserData() ? Local<Value>::New(isolate, *(Persistent<Value> *)webSocket->getUserData()) : Local<Value>::Cast(Undefined(isolate));
 }
 
@@ -141,13 +141,13 @@ void getUserData(const FunctionCallbackInfo<Value> &args) {
 }
 
 void clearUserData(const FunctionCallbackInfo<Value> &args) {
-    uWS::WebSocket *webSocket = unwrapSocket(args[0].As<External>());
+    eioWS::WebSocket *webSocket = unwrapSocket(args[0].As<External>());
     ((Persistent<Value> *)webSocket->getUserData())->Reset();
     delete (Persistent<Value> *)webSocket->getUserData();
 }
 
 void setUserData(const FunctionCallbackInfo<Value> &args) {
-    uWS::WebSocket *webSocket = unwrapSocket(args[0].As<External>());
+    eioWS::WebSocket *webSocket = unwrapSocket(args[0].As<External>());
     if (webSocket->getUserData()) {
         ((Persistent<Value> *)webSocket->getUserData())->Reset(args.GetIsolate(), args[1]);
     } else {
@@ -156,7 +156,7 @@ void setUserData(const FunctionCallbackInfo<Value> &args) {
 }
 
 void getAddress(const FunctionCallbackInfo<Value> &args) {
-    typename uWS::WebSocket::Address address = unwrapSocket(args[0].As<External>())->getAddress();
+    typename eioWS::WebSocket::Address address = unwrapSocket(args[0].As<External>())->getAddress();
     Isolate *isolate = args.GetIsolate();
     Local<Array> array = Array::New(isolate, 3);
     array->Set(isolate->GetCurrentContext(), 0, Integer::New(isolate, address.port));
@@ -181,7 +181,7 @@ struct SendCallbackData {
     Isolate *isolate;
 };
 
-void sendCallback(uWS::WebSocket *webSocket, void *data, bool cancelled, void *reserved) {
+void sendCallback(eioWS::WebSocket *webSocket, void *data, bool cancelled, void *reserved) {
     SendCallbackData *sc = static_cast<SendCallbackData *>(data);
     if (!cancelled) {
         HandleScope hs(sc->isolate);
@@ -192,11 +192,11 @@ void sendCallback(uWS::WebSocket *webSocket, void *data, bool cancelled, void *r
 }
 
 void send(const FunctionCallbackInfo<Value> &args) {
-    uWS::OpCode opCode = (uWS::OpCode)args[2].As<Integer>()->Value();
+    eioWS::OpCode opCode = (eioWS::OpCode)args[2].As<Integer>()->Value();
     NativeString nativeString(args.GetIsolate(), args[1]);
 
     SendCallbackData *sc = nullptr;
-    void (*callback)(uWS::WebSocket *, void *, bool, void *) = nullptr;
+    void (*callback)(eioWS::WebSocket *, void *, bool, void *) = nullptr;
 
     if (args[3]->IsFunction()) {
         callback = sendCallback;
@@ -215,7 +215,7 @@ struct Ticket {
 };
 
 void upgrade(const FunctionCallbackInfo<Value> &args) {
-    uWS::Group *serverGroup = (uWS::Group *)args[0].As<External>()->Value();
+    eioWS::Group *serverGroup = (eioWS::Group *)args[0].As<External>()->Value();
     Ticket *ticket = static_cast<Ticket *>(args[1].As<External>()->Value());
     Isolate *isolate = args.GetIsolate();
     NativeString secKey(isolate, args[2]);
@@ -261,13 +261,13 @@ void transfer(const FunctionCallbackInfo<Value> &args) {
 }
 
 void onConnection(const FunctionCallbackInfo<Value> &args) {
-    uWS::Group *group = (uWS::Group *)args[0].As<External>()->Value();
+    eioWS::Group *group = (eioWS::Group *)args[0].As<External>()->Value();
     GroupData *groupData = static_cast<GroupData *>(group->getUserData());
 
     Isolate *isolate = args.GetIsolate();
     Persistent<Function> *connectionCallback = &groupData->connectionHandler;
     connectionCallback->Reset(isolate, Local<Function>::Cast(args[1]));
-    group->onConnection([isolate, connectionCallback, groupData](uWS::WebSocket *webSocket) {
+    group->onConnection([isolate, connectionCallback, groupData](eioWS::WebSocket *webSocket) {
         groupData->size++;
         HandleScope hs(isolate);
         Local<Value> argv[] = {wrapSocket(webSocket, isolate)};
@@ -276,14 +276,14 @@ void onConnection(const FunctionCallbackInfo<Value> &args) {
 }
 
 void onMessage(const FunctionCallbackInfo<Value> &args) {
-    uWS::Group *group = (uWS::Group *)args[0].As<External>()->Value();
+    eioWS::Group *group = (eioWS::Group *)args[0].As<External>()->Value();
     GroupData *groupData = static_cast<GroupData *>(group->getUserData());
 
     Isolate *isolate = args.GetIsolate();
     Persistent<Function> *messageCallback = &groupData->messageHandler;
 
     messageCallback->Reset(isolate, Local<Function>::Cast(args[1]));
-    group->onMessage([isolate, messageCallback, group](uWS::WebSocket *webSocket, const char *message, size_t length, uWS::OpCode opCode) {
+    group->onMessage([isolate, messageCallback, group](eioWS::WebSocket *webSocket, const char *message, size_t length, eioWS::OpCode opCode) {
         if(length != 1 || message[0] != 65) {
             HandleScope hs(isolate);
             Local<Value> argv[] = {wrapMessage(message, length, opCode, isolate),
@@ -294,19 +294,19 @@ void onMessage(const FunctionCallbackInfo<Value> &args) {
 }
 
 void onDisconnection(const FunctionCallbackInfo<Value> &args) {
-    uWS::Group *group = (uWS::Group *)args[0].As<External>()->Value();
+    eioWS::Group *group = (eioWS::Group *)args[0].As<External>()->Value();
     GroupData *groupData = static_cast<GroupData *>(group->getUserData());
 
     Isolate *isolate = args.GetIsolate();
     Persistent<Function> *disconnectionCallback = &groupData->disconnectionHandler;
     disconnectionCallback->Reset(isolate, Local<Function>::Cast(args[1]));
 
-    group->onDisconnection([isolate, disconnectionCallback, groupData]( uWS::WebSocket *webSocket, int code, char *message, size_t length) {
+    group->onDisconnection([isolate, disconnectionCallback, groupData]( eioWS::WebSocket *webSocket, int code, char *message, size_t length) {
         groupData->size--;
         HandleScope hs(isolate);
         Local<Value> argv[] = {
         wrapSocket(webSocket, isolate), Integer::New(isolate, code),
-        wrapMessage(message, length, uWS::OpCode::CLOSE, isolate),
+        wrapMessage(message, length, eioWS::OpCode::CLOSE, isolate),
         getDataV8(webSocket, isolate)};
         Local<Function>::New(isolate, *disconnectionCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 4, argv);
     });
@@ -319,7 +319,7 @@ void closeSocket(const FunctionCallbackInfo<Value> &args) {
 
 void closeGroup(const FunctionCallbackInfo<Value> &args) {
     NativeString nativeString(args.GetIsolate(), args[2]);
-    uWS::Group *group = (uWS::Group *)args[0].As<External>()->Value();
+    eioWS::Group *group = (eioWS::Group *)args[0].As<External>()->Value();
     group->close(args[1].As<Integer>()->Value(), nativeString.getData(), nativeString.getLength());
 }
 

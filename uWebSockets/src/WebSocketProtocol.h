@@ -7,7 +7,7 @@
 #include <cstring>
 #include <cstdlib>
 
-namespace uWS {
+namespace eioWS {
     enum OpCode : unsigned char {
         NONE = 0,
         TEXT = 1,

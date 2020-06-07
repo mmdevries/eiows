@@ -8,7 +8,7 @@
 #include <mutex>
 #include <map>
 
-namespace uWS {
+namespace eioWS {
     struct WIN32_EXPORT Hub : protected uS::Node, public Group {
         protected:
             struct ConnectionData {

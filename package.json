@@ -1,9 +1,9 @@
 {
-  "name": "uws",
-  "version": "2.9.12",
+  "name": "eiows",
+  "version": "3.0.0",
+  "description": "custom fork of uWebSockets 0.14",
   "license": "MIT",
   "main": "./dist/uws.js",
-  "description": "mmdevries/uws custom fork of uWebSockets 0.14",
   "scripts": {
     "install": "node-gyp rebuild > build_log.txt 2>&1 || exit 0"
   },
@@ -11,9 +11,18 @@
     "node": ">=8.12.0 <15.0"
   },
   "keywords": [
-    "tiny",
     "websocket",
+    "engine.io",
+    "socket.io",
     "uws"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmdevries/eiows.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mmdevries/eiows/issues"
+  },
+  "homepage": "https://github.com/mmdevries/eiows",
   "gypfile": true
 }

@@ -2,7 +2,7 @@
 #include <openssl/sha.h>
 #include <string>
 
-namespace uWS {
+namespace eioWS {
     z_stream *Hub::allocateDefaultCompressor(z_stream *zStream) {
         deflateInit2(zStream, 1, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY);
         return zStream;

@@ -2,7 +2,7 @@
 #include "Group.h"
 #include "Hub.h"
 
-namespace uWS {
+namespace eioWS {
     WebSocket::WebSocket(unsigned int maxP, bool perMessageDeflate, uS::Socket *socket) :
         uS::Socket(std::move(*socket)) {
         maxPayload = maxP;
