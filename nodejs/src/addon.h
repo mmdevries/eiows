@@ -10,15 +10,15 @@
 #if NODE_MAJOR_VERSION==10
 #include "node_10_headers/tls_wrap.h"
 #endif
-#if NODE_MAJOR_VERSION==12
+#if (NODE_MAJOR_VERSION==12 && NODE_MINOR_VERSION>=18)
 #include "node_12_headers/tls_wrap.h"
 #include "node_12_headers/base_object-inl.h"
 #endif
-#if NODE_MAJOR_VERSION==13
+#if (NODE_MAJOR_VERSION==13 && NODE_MINOR_VERSION>=14)
 #include "node_13_headers/tls_wrap.h"
 #include "node_13_headers/base_object-inl.h"
 #endif
-#if NODE_MAJOR_VERSION==14
+#if (NODE_MAJOR_VERSION==14 && NODE_MINOR_VERSION>=4)
 #include "node_14_headers/tls_wrap.h"
 #include "node_14_headers/base_object-inl.h"
 #endif
