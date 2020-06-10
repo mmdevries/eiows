@@ -51,19 +51,19 @@
         {
             'target_name': 'action_after_build',
             'type': 'none',
-            'dependencies': ['eiwos'],
+            'dependencies': ['eiows'],
             'conditions': [
                 ['OS!="win"', {
                     'actions': [
                         {
                             'action_name': 'move_lib',
                             'inputs': [
-                                '<@(PRODUCT_DIR)/eiwos.node'
+                                '<@(PRODUCT_DIR)/eiows.node'
                             ],
                             'outputs': [
-                                'eiwos'
+                                'eiows'
                             ],
-                            'action': ['cp', '<@(PRODUCT_DIR)/eiwos.node', 'dist/eiwos_<!@(node -p process.platform)_<!@(node -p process.versions.modules).node']
+                            'action': ['cp', '<@(PRODUCT_DIR)/eiows.node', 'dist/eiows_<!@(node -p process.platform)_<!@(node -p process.versions.modules).node']
                         }
                     ]}
                  ],
@@ -72,12 +72,12 @@
                         {
                             'action_name': 'move_lib',
                             'inputs': [
-                                '<@(PRODUCT_DIR)/eiwos.node'
+                                '<@(PRODUCT_DIR)/eiows.node'
                             ],
                             'outputs': [
-                                'eiwos'
+                                'eiows'
                             ],
-                            'action': ['copy', '<@(PRODUCT_DIR)/eiwos.node', 'dist/eiwos_<!@(node -p process.platform)_<!@(node -p process.versions.modules).node']
+                            'action': ['copy', '<@(PRODUCT_DIR)/eiows.node', 'dist/eiows_<!@(node -p process.platform)_<!@(node -p process.versions.modules).node']
                         }
                     ]}
                  ]
