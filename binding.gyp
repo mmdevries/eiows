@@ -1,7 +1,7 @@
 {
     "targets": [
         {
-            "target_name": "uws",
+            "target_name": "eiows",
             "sources": [
                 'nodejs/src/Addon.h',
                 'nodejs/src/addon.cpp',
@@ -51,19 +51,19 @@
         {
             'target_name': 'action_after_build',
             'type': 'none',
-            'dependencies': ['uws'],
+            'dependencies': ['eiwos'],
             'conditions': [
                 ['OS!="win"', {
                     'actions': [
                         {
                             'action_name': 'move_lib',
                             'inputs': [
-                                '<@(PRODUCT_DIR)/uws.node'
+                                '<@(PRODUCT_DIR)/eiwos.node'
                             ],
                             'outputs': [
-                                'uws'
+                                'eiwos'
                             ],
-                            'action': ['cp', '<@(PRODUCT_DIR)/uws.node', 'dist/uws_<!@(node -p process.platform)_<!@(node -p process.versions.modules).node']
+                            'action': ['cp', '<@(PRODUCT_DIR)/eiwos.node', 'dist/eiwos_<!@(node -p process.platform)_<!@(node -p process.versions.modules).node']
                         }
                     ]}
                  ],
@@ -72,12 +72,12 @@
                         {
                             'action_name': 'move_lib',
                             'inputs': [
-                                '<@(PRODUCT_DIR)/uws.node'
+                                '<@(PRODUCT_DIR)/eiwos.node'
                             ],
                             'outputs': [
-                                'uws'
+                                'eiwos'
                             ],
-                            'action': ['copy', '<@(PRODUCT_DIR)/uws.node', 'dist/uws_<!@(node -p process.platform)_<!@(node -p process.versions.modules).node']
+                            'action': ['copy', '<@(PRODUCT_DIR)/eiwos.node', 'dist/eiwos_<!@(node -p process.platform)_<!@(node -p process.versions.modules).node']
                         }
                     ]}
                  ]

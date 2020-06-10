@@ -5,14 +5,14 @@
 const EE_ERROR = 'Registering more than one listener to a WebSocket is not supported.';
 const DEFAULT_PAYLOAD_LIMIT = 16777216;
 
-var uws = {};
-uws.PERMESSAGE_DEFLATE = 1;
-uws.SLIDING_DEFLATE_WINDOW = 16;
-uws.OPCODE_TEXT = 1;
-uws.OPCODE_BINARY = 2;
-uws.OPCODE_PING = 9;
-uws.OPEN = 1;
-uws.CLOSED = 0;
+var eiwos = {};
+eiwos.PERMESSAGE_DEFLATE = 1;
+eiwos.SLIDING_DEFLATE_WINDOW = 16;
+eiwos.OPCODE_TEXT = 1;
+eiwos.OPCODE_BINARY = 2;
+eiwos.OPCODE_PING = 9;
+eiwos.OPEN = 1;
+eiwos.CLOSED = 0;
 
 function noop() {}
 
@@ -22,10 +22,10 @@ function abortConnection(socket, code, message) {
 
 const native = (() => {
     try {
-        return require(`./uws_${process.platform}_${process.versions.modules}`);
+        return require(`./eiwos_${process.platform}_${process.versions.modules}`);
     } catch (e) {
         throw new Error(e.toString() + '\n\nCompilation of µWebSockets has failed and there is no correct pre-compiled binary ' +
-            'available for your system. Please install a supported C++17 compiler and reinstall the module \'uws\'.');
+            'available for your system or an unsupported node version is used. Please install a supported C++17 compiler or update node and reinstall the module \'eiwos\'.');
     }
 })();
 
@@ -83,7 +83,7 @@ class WebSocket {
 
             const binary = options && typeof options.binary === 'boolean' ? options.binary : typeof message !== 'string';
 
-            native.server.send(this.external, message, binary ? uws.OPCODE_BINARY : uws.OPCODE_TEXT, cb ? (() => {
+            native.server.send(this.external, message, binary ? eiwos.OPCODE_BINARY : eiwos.OPCODE_TEXT, cb ? (() => {
                 process.nextTick(cb);
             }) : undefined, options && options.compress);
         } else if (cb) {
@@ -107,10 +107,10 @@ class Server {
 
         var nativeOptions = 0;
         if (options.perMessageDeflate !== undefined && options.perMessageDeflate !== false) {
-            nativeOptions |= uws.PERMESSAGE_DEFLATE;
+            nativeOptions |= eiwos.PERMESSAGE_DEFLATE;
 
             if (options.perMessageDeflate.serverNoContextTakeover === false) {
-                nativeOptions |= uws.SLIDING_DEFLATE_WINDOW;
+                nativeOptions |= eiwos.SLIDING_DEFLATE_WINDOW;
             }
         }
 
@@ -167,7 +167,7 @@ class Server {
     }
 }
 
-uws.Server = Server;
-uws.native = native;
+eiwos.Server = Server;
+eiwos.native = native;
 
-module.exports = uws;
+module.exports = eiwos;
