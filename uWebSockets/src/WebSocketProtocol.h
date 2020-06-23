@@ -232,7 +232,7 @@ namespace eioWS {
                 };
 
                 static inline CloseFrame parseClosePayload(char *src, size_t length) {
-                    CloseFrame cf = {code: 0, message: "", length: 0};
+                    CloseFrame cf = {};
 
                     if (length >= 2) {
                         memcpy(&cf.code, src, 2);
@@ -253,7 +253,7 @@ namespace eioWS {
                         }
                     } else {
                         // if there was no code then we assume it was not provided
-                        cf = {code: 1005, message: "", length: 0};
+                        cf = {1005, "", 0};
                     }
                     return cf;
                 }

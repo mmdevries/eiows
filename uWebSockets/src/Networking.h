@@ -45,7 +45,13 @@ inline void close(SOCKET fd) {closesocket(fd);}
 inline int setsockopt(SOCKET fd, int level, int optname, const void *optval, socklen_t optlen) {
     return setsockopt(fd, level, optname, (const char *) optval, optlen);
 }
-
+inline SOCKET dup(SOCKET socket) {
+    WSAPROTOCOL_INFOW pi;
+    if (WSADuplicateSocketW(socket, GetCurrentProcessId(), &pi) == SOCKET_ERROR) {
+        return INVALID_SOCKET;
+    }
+    return WSASocketW(pi.iAddressFamily, pi.iSocketType, pi.iProtocol, &pi, 0, WSA_FLAG_OVERLAPPED);
+}
 #else
 #include <sys/socket.h>
 #include <netinet/in.h>
