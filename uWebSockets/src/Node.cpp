@@ -12,6 +12,8 @@ namespace uS {
 
         // each node has a context
         nodeData->netContext = new Context();
+        nodeData->loop = loop;
+
         nodeData->asyncMutex = &asyncMutex;
 
         int indices = NodeData::getMemoryBlockIndex(NodeData::preAllocMaxSize) + 1;

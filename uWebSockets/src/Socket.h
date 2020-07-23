@@ -79,6 +79,29 @@ namespace uS {
                 }
             }
 
+            // clears user data!
+            template <void onTimeout(Socket *)>
+            void startTimeout(int timeoutMs = 15000) {
+                Timer *timer = new Timer(nodeData->loop);
+                timer->setData(this);
+                timer->start([](Timer *timer) {
+                    Socket *s = (Socket *) timer->getData();
+                    s->cancelTimeout();
+                    onTimeout(s);
+                }, timeoutMs, 0);
+
+                user = timer;
+            }
+
+            void cancelTimeout() {
+                Timer *timer = (Timer *) getUserData();
+                if (timer) {
+                    timer->stop();
+                    timer->close();
+                    user = nullptr;
+                }
+            }
+
             template <class STATE>
                 static void sslIoHandler(Poll *p, int status, int events) {
                     Socket *socket = static_cast<Socket *>(p);
@@ -397,25 +420,28 @@ namespace uS {
 
             void shutdown() {
                 if (ssl) {
+                    //todo: poll in/out - have the io_cb recall shutdown if failed
                     SSL_shutdown(ssl);
+                } else {
+                    ::shutdown(getFd(), SHUT_WR);
                 }
-                ::shutdown(getFd(), SHUT_WR);
             }
 
             template <class T>
-                void closeSocket() {
-                    uv_os_sock_t fd = getFd();
-                    Context *netContext = nodeData->netContext;
-                    if (ssl) {
-                        SSL_free(ssl);
-                    }
-                    netContext->closeSocket(fd);
+            void closeSocket() {
+                uv_os_sock_t fd = getFd();
+                Context *netContext = nodeData->netContext;
+                stop();
+                netContext->closeSocket(fd);
 
-                    stop();
-                    Poll::close([](Poll *p) {
-                       delete (T *) p;
-                    });
+                if (ssl) {
+                    SSL_free(ssl);
                 }
+
+                Poll::close([](Poll *p) {
+                    delete (T *) p;
+                });
+            }
 
             bool isShuttingDown() {
                 return state.shuttingDown;

@@ -104,6 +104,8 @@ namespace eioWS {
 
         setShuttingDown(true);
 
+        startTimeout<WebSocket::onEnd>();
+
         char closePayload[MAX_CLOSE_PAYLOAD + 2];
         int closePayloadLength = (int) WebSocketProtocol<WebSocket>::formatClosePayload(closePayload, code, message, length);
         send(closePayload, closePayloadLength, OpCode::CLOSE, [](WebSocket *p, void *data, bool cancelled, void *reserved) {
@@ -111,7 +113,6 @@ namespace eioWS {
                 p->shutdown();
             }
         });
-        WebSocket::onEnd(this);
     }
 
     void WebSocket::onEnd(uS::Socket *s) {
@@ -119,6 +120,8 @@ namespace eioWS {
         if (!webSocket->isShuttingDown()) {
             Group::from(webSocket)->removeWebSocket(webSocket);
             Group::from(webSocket)->disconnectionHandler(webSocket, 1006, nullptr, 0);
+        } else {
+            webSocket->cancelTimeout();
         }
 
         webSocket->template closeSocket<WebSocket>();

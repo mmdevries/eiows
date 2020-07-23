@@ -41,6 +41,38 @@ namespace uS {
         }
     };
 
+    struct Timer {
+        uv_timer_t uv_timer;
+
+        Timer(Loop *loop) {
+            uv_timer_init(loop, &uv_timer);
+        }
+
+        void start(void (*cb)(Timer *), int first, int repeat) {
+            uv_timer_start(&uv_timer, (uv_timer_cb) cb, first, repeat);
+        }
+
+        void setData(void *data) {
+            uv_timer.data = data;
+        }
+
+        void *getData() {
+            return uv_timer.data;
+        }
+
+        void stop() {
+            uv_timer_stop(&uv_timer);
+        }
+
+        void close() {
+            uv_close((uv_handle_t *) &uv_timer, [](uv_handle_t *t) {
+                delete (Timer *) t;
+            });
+        }
+    private:
+        ~Timer() {}
+    };
+
     struct Poll {
         uv_poll_t *uv_poll;
         void (*cb)(Poll *p, int status, int events);
