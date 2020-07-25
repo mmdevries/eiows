@@ -98,11 +98,14 @@ namespace eioWS {
 
     void WebSocket::close(int code, const char *message, size_t length) {
         static const int MAX_CLOSE_PAYLOAD = 123;
+        if (isShuttingDown()) {
+            return;
+        }
+        setShuttingDown(true);
         length = std::min<size_t>(MAX_CLOSE_PAYLOAD, length);
         Group::from(this)->removeWebSocket(this);
         Group::from(this)->disconnectionHandler(this, code, (char *) message, length);
 
-        setShuttingDown(true);
 
         startTimeout<WebSocket::onEnd>();
 
