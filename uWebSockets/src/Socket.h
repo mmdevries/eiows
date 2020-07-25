@@ -57,12 +57,12 @@ namespace uS {
             } messageQueue;
 
             int getPoll() {
-                return state.poll;
+                return state.poll | UV_DISCONNECT;
             }
 
             int setPoll(int poll) {
-                state.poll = poll;
-                return poll;
+                state.poll = poll | UV_DISCONNECT;
+                return poll | UV_DISCONNECT;
             }
 
             void setSSLClosed() {
@@ -111,12 +111,9 @@ namespace uS {
                 static void sslIoHandler(Poll *p, int status, int events) {
                     Socket *socket = static_cast<Socket *>(p);
 
-                    if (status < 0) {
+                    if (status < 0 || (events & UV_DISCONNECT)) {
+                        socket->setSSLClosed();
                         STATE::onEnd(static_cast<Socket *>(p));
-                        return;
-                    }
-
-                    if (socket->isSSLClosed()) {
                         return;
                     }
 
