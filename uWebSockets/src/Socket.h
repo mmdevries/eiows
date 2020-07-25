@@ -115,6 +115,7 @@ namespace uS {
                         STATE::onEnd(static_cast<Socket *>(p));
                         return;
                     }
+
                     if (socket->isSSLClosed()) {
                         return;
                     }
@@ -270,7 +271,8 @@ namespace uS {
             }
 
             bool write(Queue::Message *message, bool &waiting) {
-                if (messageQueue.empty()) {
+
+                if (messageQueue.empty() && !isSSLClosed()) {
                     ssize_t sent = 0;
                     if (ssl) {
                         sent = SSL_write(ssl, message->data, (int) message->length);

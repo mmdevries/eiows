@@ -434,13 +434,13 @@ constexpr size_t kFsStatsBufferLength =
   V(as_callback_data, v8::Object)                                              \
   V(async_hooks_after_function, v8::Function)                                  \
   V(async_hooks_before_function, v8::Function)                                 \
+  V(async_hooks_callback_trampoline, v8::Function)                             \
   V(async_hooks_binding, v8::Object)                                           \
   V(async_hooks_destroy_function, v8::Function)                                \
   V(async_hooks_init_function, v8::Function)                                   \
   V(async_hooks_promise_resolve_function, v8::Function)                        \
   V(buffer_prototype_object, v8::Object)                                       \
   V(crypto_key_object_constructor, v8::Function)                               \
-  V(domain_callback, v8::Function)                                             \
   V(domexception_function, v8::Function)                                       \
   V(enhance_fatal_stack_after_inspector, v8::Function)                         \
   V(enhance_fatal_stack_before_inspector, v8::Function)                        \
@@ -1118,8 +1118,6 @@ class Environment : public MemoryRetainer {
                                          const char* name,
                                          v8::FunctionCallback callback);
 
-  void BeforeExit(void (*cb)(void* arg), void* arg);
-  void RunBeforeExitCallbacks();
   void AtExit(void (*cb)(void* arg), void* arg);
   void RunAtExitCallbacks();
 
@@ -1394,7 +1392,6 @@ class Environment : public MemoryRetainer {
     void (*cb_)(void* arg);
     void* arg_;
   };
-  std::list<ExitCallback> before_exit_functions_;
 
   std::list<ExitCallback> at_exit_functions_;
 
