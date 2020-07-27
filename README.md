@@ -14,15 +14,13 @@ Example:
 
     var fs = require('fs');
     var https = require('https');
-    var express = require('express');
 
     var ssl_options = {
         key: fs.readFileSync('server.key'),
         cert: fs.readFileSync('server.crt'),
     };
 
-    var app = express();
-    var server = https.createServer(ssl_options, app);
+    var server = https.createServer(ssl_options);
 
     server.listen(1443);
 
