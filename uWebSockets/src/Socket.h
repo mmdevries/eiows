@@ -9,9 +9,8 @@ namespace uS {
         protected:
             struct {
                 int poll : 4;
-                int shuttingDown : 2;
-                int sslClosed : 2;
-            } state = {0, false, false};
+                int shuttingDown : 4;
+            } state = {0, false};
 
             SSL *ssl;
             void *user = nullptr;
@@ -65,10 +64,6 @@ namespace uS {
                 return poll;
             }
 
-            void setSSLClosed() {
-                state.sslClosed = true;
-            }
-
             void setShuttingDown(bool shuttingDown) {
                 state.shuttingDown = shuttingDown;
             }
@@ -112,7 +107,6 @@ namespace uS {
                     Socket *socket = static_cast<Socket *>(p);
 
                     if (status < 0) {
-                        socket->setSSLClosed();
                         STATE::onEnd(static_cast<Socket *>(p));
                         return;
                     }
@@ -279,7 +273,7 @@ namespace uS {
 
             bool write(Queue::Message *message, bool &waiting) {
 
-                if (messageQueue.empty() && !isSSLClosed()) {
+                if (messageQueue.empty()) {
                     ssize_t sent = 0;
                     if (ssl) {
                         sent = SSL_write(ssl, message->data, (int) message->length);
@@ -442,7 +436,6 @@ namespace uS {
             void shutdown() {
                 if (ssl) {
                     //todo: poll in/out - have the io_cb recall shutdown if failed
-                    setSSLClosed();
                     SSL_shutdown(ssl);
                 } else {
                     ::shutdown(getFd(), SHUT_WR);
@@ -463,10 +456,6 @@ namespace uS {
                 Poll::close([](Poll *p) {
                     delete (T *) p;
                 });
-            }
-
-            bool isSSLClosed() {
-                return state.sslClosed;
             }
 
             bool isShuttingDown() {
