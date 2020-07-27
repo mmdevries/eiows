@@ -69,6 +69,7 @@ inline SOCKET dup(SOCKET socket) {
 #include "Libuv.h"
 #endif
 #include <openssl/ssl.h>
+#include <openssl/err.h>
 #include <csignal>
 #include <vector>
 #include <string>

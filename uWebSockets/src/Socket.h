@@ -57,12 +57,12 @@ namespace uS {
             } messageQueue;
 
             int getPoll() {
-                return state.poll | UV_DISCONNECT;
+                return state.poll;
             }
 
             int setPoll(int poll) {
-                state.poll = poll | UV_DISCONNECT;
-                return poll | UV_DISCONNECT;
+                state.poll = poll;
+                return poll;
             }
 
             void setSSLClosed() {
@@ -111,7 +111,7 @@ namespace uS {
                 static void sslIoHandler(Poll *p, int status, int events) {
                     Socket *socket = static_cast<Socket *>(p);
 
-                    if (status < 0 || (events & UV_DISCONNECT)) {
+                    if (status < 0) {
                         socket->setSSLClosed();
                         STATE::onEnd(static_cast<Socket *>(p));
                         return;
@@ -142,6 +142,11 @@ namespace uS {
                                             socket->change(socket, socket->setPoll(socket->getPoll() | UV_WRITABLE));
                                         }
                                         break;
+                                    case SSL_ERROR_SSL:
+                                    case SSL_ERROR_SYSCALL:
+                                        ERR_clear_error();
+                                        STATE::onEnd(static_cast<Socket *>(p));
+                                        return;
                                     default:
                                         STATE::onEnd(static_cast<Socket *>(p));
                                         return;
@@ -164,6 +169,11 @@ namespace uS {
                                             socket->change(socket, socket->setPoll(socket->getPoll() | UV_WRITABLE));
                                         }
                                         break;
+                                    case SSL_ERROR_SSL:
+                                    case SSL_ERROR_SYSCALL:
+                                        ERR_clear_error();
+                                        STATE::onEnd(static_cast<Socket *>(p));
+                                        return;
                                     default:
                                         STATE::onEnd(static_cast<Socket *>(p));
                                         return;
@@ -286,6 +296,10 @@ namespace uS {
                                         changePoll(this);
                                     }
                                     break;
+                                case SSL_ERROR_SSL:
+                                case SSL_ERROR_SYSCALL:
+                                    ERR_clear_error();
+                                    return false;
                                 default:
                                     return false;
                             }
