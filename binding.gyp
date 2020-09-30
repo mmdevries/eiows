@@ -15,14 +15,14 @@
             ],
             'conditions': [
                 ['OS=="linux"', {
-                    'cflags_cc': ['-std=c++17', '-DUSE_LIBUV'],
+                    'cflags_cc': ['-std=c++17'],
                     'cflags_cc!': ['-fno-exceptions', '-std=gnu++11', '-fno-rtti'],
                     'cflags!': ['-fno-omit-frame-pointer'],
                     'ldflags!': ['-rdynamic'],
                     'ldflags': ['-s']
                 }],
                 ['OS=="freebsd"', {
-                    'cflags_cc': ['-std=c++17', '-DUSE_LIBUV'],
+                    'cflags_cc': ['-std=c++17'],
                     'cflags_cc!': ['-fno-exceptions', '-std=gnu++11', '-fno-rtti'],
                     'cflags!': ['-fno-omit-frame-pointer'],
                     'ldflags!': ['-rdynamic'],
@@ -39,11 +39,11 @@
                         'GCC_OPTIMIZATION_LEVEL': '3',
                         'GCC_ENABLE_CPP_RTTI': 'YES',
                         'OTHER_CFLAGS!': ['-fno-strict-aliasing'],
-                        'OTHER_CPLUSPLUSFLAGS': ['-DUSE_LIBUV']
+                        'OTHER_CPLUSPLUSFLAGS': []
                     }
                 }],
                 ['OS=="win"', {
-                    'cflags_cc': ['/DUSE_LIBUV'],
+                    'cflags_cc': [],
                     'cflags_cc!': []
                 }]
             ]

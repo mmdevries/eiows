@@ -20,21 +20,8 @@ namespace eioWS {
      * Hints: Consider using any of the prepare function if any of their
      * use cases match what you are trying to achieve (pub/sub, broadcast)
      *
-     * Thread safe
-     *
      */
     void WebSocket::send(const char *message, size_t length, OpCode opCode, void(*callback)(WebSocket *webSocket, void *data, bool cancelled, void *reserved), void *callbackData, bool compress) {
-
-#ifdef UWS_THREADSAFE
-        std::lock_guard<std::recursive_mutex> lockGuard(*nodeData->asyncMutex);
-        if (isClosed()) {
-            if (callback) {
-                callback(this, callbackData, true, nullptr);
-            }
-            return;
-        }
-#endif
-
         struct TransformData {
             OpCode opCode;
             bool compress;
@@ -76,14 +63,6 @@ namespace eioWS {
      *
      */
     void WebSocket::terminate() {
-
-#ifdef UWS_THREADSAFE
-        std::lock_guard<std::recursive_mutex> lockGuard(*nodeData->asyncMutex);
-        if (isClosed()) {
-            return;
-        }
-#endif
-
         WebSocket::onEnd(this);
     }
 

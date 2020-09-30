@@ -42,11 +42,9 @@ namespace eioWS {
             void onMessage(const std::function<void(WebSocket *, char *, size_t, OpCode)> &handler);
             void onDisconnection(const std::function<void(WebSocket *, int code, char *message, size_t length)> &handler);
 
-            // Thread safe
             void setUserData(void *user);
             void *getUserData();
 
-            // Not thread safe
             void close(int code = 1000, char *message = nullptr, size_t length = 0);
 
             template <class F>

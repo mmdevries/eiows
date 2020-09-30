@@ -65,9 +65,7 @@ inline SOCKET dup(SOCKET socket) {
 #define WIN32_EXPORT
 #endif
 
-#if !defined(__linux__) || defined(USE_LIBUV)
 #include "Libuv.h"
-#endif
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <csignal>
@@ -81,23 +79,8 @@ namespace uS {
     // todo: mark sockets nonblocking in these functions
     // todo: probably merge this Context with the TLS::Context for same interface for SSL and non-SSL!
     struct Context {
-
-#ifdef USE_MTCP
-        mtcp_context *mctx;
-#endif
-
-        Context() {
-            // mtcp_create_context
-#ifdef USE_MTCP
-            mctx = mtcp_create_context(0); // cpu index?
-#endif
-        }
-
-        ~Context() {
-#ifdef USE_MTCP
-            mtcp_destroy_context(mctx);
-#endif
-        }
+        Context() {}
+        ~Context() {}
 
         static void closeSocket(uv_os_sock_t fd) {
 #ifdef _WIN32

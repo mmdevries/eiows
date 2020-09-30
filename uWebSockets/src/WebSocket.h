@@ -60,10 +60,7 @@ namespace eioWS {
                 void(*callback)(void *webSocket, void *data, bool cancelled, void *reserved);
             };
 
-            // Not thread safe
             void close(int code = 1000, const char *message = nullptr, size_t length = 0);
-
-            // Thread safe
             void terminate();
             void ping(const char *message) {send(message, OpCode::PING);}
             void send(const char *message, OpCode opCode = OpCode::TEXT) {send(message, strlen(message), opCode);}
