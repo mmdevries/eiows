@@ -23,7 +23,10 @@
 #include "node_13_headers/tls_wrap.h"
 #include "node_13_headers/base_object-inl.h"
 #endif
-#if (NODE_MAJOR_VERSION==14 && NODE_MINOR_VERSION>=4)
+#if (NODE_MAJOR_VERSION==14 && NODE_MINOR_VERSION>=13)
+#include "node_14.13_headers/tls_wrap.h"
+#include "node_14.13_headers/base_object-inl.h"
+#elif (NODE_MAJOR_VERSION==14 && NODE_MINOR_VERSION>=4)
 #include "node_14_headers/tls_wrap.h"
 #include "node_14_headers/base_object-inl.h"
 #endif
