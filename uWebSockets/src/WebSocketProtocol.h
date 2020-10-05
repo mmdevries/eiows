@@ -232,37 +232,26 @@ namespace eioWS {
                 };
 
                 static inline CloseFrame parseClosePayload(char *src, size_t length) {
-                    CloseFrame cf = {};
+                    CloseFrame cf = {1005, "", 0};
 
                     if (length >= 2) {
                         memcpy(&cf.code, src, 2);
                         cf = {ntohs(cf.code), src + 2, length - 2};
-                        if (!isValidUtf8((unsigned char *) cf.message, cf.length)){
-                            // this actually should be an error
-                            return {};
+                        if (cf.code < 1000 || cf.code > 4999 || (cf.code > 1011 && cf.code < 4000) ||
+                            (cf.code >= 1004 && cf.code <= 1006) || !isValidUtf8((unsigned char *) cf.message, cf.length)) {
+                            return {1006, "", 0};
                         }
-
-                        if (!((cf.code >= 1000 &&
-                                        cf.code <= 1013 &&
-                                        cf.code != 1004 &&
-                                        cf.code != 1005 &&
-                                        cf.code != 1006)
-                                    || (cf.code >= 3000 && cf.code <= 4999))) {
-                            // this actually should be an error
-                            return {};
-                        }
-                    } else {
-                        // if there was no code then we assume it was not provided
-                        cf = {1005, "", 0};
                     }
                     return cf;
                 }
 
                 static inline size_t formatClosePayload(char *dst, uint16_t code, const char *message, size_t length) {
-                    if (code) {
+                    if (code && code != 1005 && code != 1006) {
                         code = htons(code);
                         memcpy(dst, &code, 2);
-                        memcpy(dst + 2, message, length);
+                        if (message) {
+                            memcpy(dst + 2, message, length);
+                        }
                         return length + 2;
                     }
                     return 0;
