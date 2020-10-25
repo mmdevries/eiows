@@ -30,18 +30,34 @@
 #include "node_14_headers/tls_wrap.h"
 #include "node_14_headers/base_object-inl.h"
 #endif
+#if NODE_MAJOR_VERSION==15
+#include "node_15_headers/crypto_tls.h"
+#endif
 
 using BaseObject = node::BaseObject;
+#if NODE_MAJOR_VERSION==15
+using TLSWrap = node::crypto::TLSWrap;
+#else
 using TLSWrap = node::TLSWrap;
-class TLSWrapSSLGetter : public node::TLSWrap {
+#endif
+
+class TLSWrapSSLGetter : public TLSWrap {
     public:
         void setSSL(const v8::FunctionCallbackInfo<v8::Value> &info){
             v8::Isolate* isolate = info.GetIsolate();
+#if NODE_MAJOR_VERSION==15
+            if (!getSSL()){
+#else
             if (!ssl_){
+#endif
                 info.GetReturnValue().Set(v8::Null(isolate));
                 return;
             }
+#if NODE_MAJOR_VERSION==15
+            SSL* ptr = getSSL()->get();
+#else
             SSL* ptr = ssl_.get();
+#endif
             info.GetReturnValue().Set(v8::External::New(isolate, ptr));
         }
 };
