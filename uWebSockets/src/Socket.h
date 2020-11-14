@@ -85,7 +85,7 @@ namespace uS {
                 Timer *timer = new Timer(nodeData->loop);
                 timer->setData(this);
                 timer->start([](Timer *timer) {
-                    Socket *s = (Socket *) timer->getData();
+                    Socket *s = static_cast<Socket *>(timer->getData());
                     s->cancelTimeout();
                     onTimeout(s);
                 }, timeoutMs, 0);
@@ -94,7 +94,7 @@ namespace uS {
             }
 
             void cancelTimeout() {
-                Timer *timer = (Timer *) getUserData();
+                Timer *timer = static_cast<Timer *>(getUserData());
                 if (timer) {
                     timer->stop();
                     timer->close();

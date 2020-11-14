@@ -66,7 +66,7 @@ namespace uS {
 
         void close() {
             uv_close((uv_handle_t *) &uv_timer, [](uv_handle_t *t) {
-                delete (Timer *) t;
+                delete reinterpret_cast<Timer *>(t);
             });
         }
     private:
