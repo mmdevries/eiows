@@ -10,7 +10,34 @@ or
 yarn add eiows
 
 
-Example:
+Examples:
+
+If you use engine.io version 5.0.0 or higher:
+
+    var fs = require('fs');
+    var https = require('https');
+
+    var ssl_options = {
+        key: fs.readFileSync('server.key'),
+        cert: fs.readFileSync('server.crt'),
+    };
+
+    var server = https.createServer(ssl_options);
+
+    server.listen(1443);
+
+    var io = require("socket.io")(server, {
+        wsEngine: require("eiows").Server,
+        perMessageDeflate: {
+            threshold: 32768
+        }
+    });
+
+    io.on("connection", function(socket) {
+        console.log('Yes, you did it!');
+    });
+
+If you use engine.io version 3.4.2 till version 5.0.0:
 
     var fs = require('fs');
     var https = require('https');
@@ -34,6 +61,5 @@ Example:
     io.on("connection", function(socket) {
         console.log('Yes, you did it!');
     });
-
 
 Have fun!
