@@ -130,6 +130,9 @@ class NativeString {
             utf8Value = new (utf8ValueMemory) String::Utf8Value(isolate, value);
             data = (**utf8Value);
             length = utf8Value->length();
+        } else if (node::Buffer::HasInstance(value)) {
+            data = node::Buffer::Data(value);
+            length = node::Buffer::Length(value);
         } else if (value->IsTypedArray()) {
             Local<ArrayBufferView> arrayBufferView = Local<ArrayBufferView>::Cast(value);
             ArrayBuffer::Contents contents = arrayBufferView->Buffer()->GetContents();
