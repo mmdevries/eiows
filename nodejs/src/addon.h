@@ -36,6 +36,9 @@
 #if NODE_MAJOR_VERSION==16
 #include "node_16_headers/crypto/crypto_tls.h"
 #endif
+#if NODE_MAJOR_VERSION==17
+#include "node_17_headers/crypto/crypto_tls.h"
+#endif
 
 using BaseObject = node::BaseObject;
 #if NODE_MAJOR_VERSION>=15
@@ -135,19 +138,37 @@ class NativeString {
             length = node::Buffer::Length(value);
         } else if (value->IsTypedArray()) {
             Local<ArrayBufferView> arrayBufferView = Local<ArrayBufferView>::Cast(value);
+#if NODE_MAJOR_VERSION>=17
+            auto contents = arrayBufferView->Buffer()->GetBackingStore();
+            length = arrayBufferView->ByteLength();
+            data = (char *) contents->Data() + arrayBufferView->ByteOffset();
+#else
             ArrayBuffer::Contents contents = arrayBufferView->Buffer()->GetContents();
             length = contents.ByteLength();
             data = (char *)contents.Data();
+#endif
         } else if (value->IsArrayBuffer()) {
             Local<ArrayBuffer> arrayBuffer = Local<ArrayBuffer>::Cast(value);
+#if NODE_MAJOR_VERSION>=17
+            auto contents = arrayBuffer->GetBackingStore();
+            length = contents->ByteLength();
+            data = (char *) contents->Data();
+#else
             ArrayBuffer::Contents contents = arrayBuffer->GetContents();
             length = contents.ByteLength();
             data = (char *)contents.Data();
+#endif
         } else if (value->IsSharedArrayBuffer()) {
             Local<SharedArrayBuffer> arrayBuffer = Local<SharedArrayBuffer>::Cast(value);
+#if NODE_MAJOR_VERSION>=17
+            auto contents = arrayBuffer->GetBackingStore();
+            length = contents->ByteLength();
+            data = (char *) contents->Data();
+#else
             SharedArrayBuffer::Contents contents = arrayBuffer->GetContents();
             length = contents.ByteLength();
             data = (char *)contents.Data();
+#endif
         } else {
             static char empty[] = "";
             data = empty;
