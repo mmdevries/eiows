@@ -1,11 +1,13 @@
 // the purpose of this header should be to provide SSL and networking wrapped in a common interface
 // it should allow cross-platform networking and SSL and also easy usage of mTCP and similar tech
-
+#include <node.h>
 #ifndef NETWORKING_UWS_H
 #define NETWORKING_UWS_H
 
+#if NODE_MAJOR_VERSION>=17
 #define OPENSSL_CONFIGURED_API 0x10100000L
 #define OPENSSL_API_COMPAT 0x10100000L
+#endif
 
 #ifndef __linux
 #define MSG_NOSIGNAL 0
