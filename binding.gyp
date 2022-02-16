@@ -2,6 +2,9 @@
     "targets": [
         {
             "target_name": "eiows",
+            'variables': {
+                'node_version': '<!(node -e "console.log(process.versions.node.split(\'.\')[0])")',
+            },
             "sources": [
                 'nodejs/src/Addon.h',
                 'nodejs/src/addon.cpp',
@@ -15,14 +18,28 @@
             ],
             'conditions': [
                 ['OS=="linux"', {
-                    'cflags_cc': ['-std=c++17'],
+                    'conditions': [
+                        ['node_version>=17', {
+                            'cflags_cc': ['-std=c++17', '-DOPENSSL_CONFIGURED_API=0x10100000L', '-DOPENSSL_API_COMPAT=0x10100000L']
+                        }],
+                        ['node_version<17', {
+                            'cflags_cc': ['-std=c++17'],
+                        }],
+                    ],
                     'cflags_cc!': ['-fno-exceptions', '-std=gnu++11', '-fno-rtti'],
                     'cflags!': ['-fno-omit-frame-pointer'],
                     'ldflags!': ['-rdynamic'],
                     'ldflags': ['-s']
                 }],
                 ['OS=="freebsd"', {
-                    'cflags_cc': ['-std=c++17'],
+                    'conditions': [
+                        ['node_version>=17', {
+                            'cflags_cc': ['-std=c++17', '-DOPENSSL_CONFIGURED_API=0x10100000L', '-DOPENSSL_API_COMPAT=0x10100000L']
+                        }],
+                        ['node_version<17', {
+                            'cflags_cc': ['-std=c++17'],
+                        }],
+                    ],
                     'cflags_cc!': ['-fno-exceptions', '-std=gnu++11', '-fno-rtti'],
                     'cflags!': ['-fno-omit-frame-pointer'],
                     'ldflags!': ['-rdynamic'],
@@ -39,11 +56,25 @@
                         'GCC_OPTIMIZATION_LEVEL': '3',
                         'GCC_ENABLE_CPP_RTTI': 'YES',
                         'OTHER_CFLAGS!': ['-fno-strict-aliasing'],
-                        'OTHER_CPLUSPLUSFLAGS': []
+                        'conditions': [
+                            ['node_version>=17', {
+                                'OTHER_CPLUSPLUSFLAGS': ['-DOPENSSL_CONFIGURED_API=0x10100000L', '-DOPENSSL_API_COMPAT=0x10100000L']
+                            }],
+                            ['node_version<17', {
+                                'OTHER_CPLUSPLUSFLAGS': []
+                            }],
+                        ],
                     }
                 }],
                 ['OS=="win"', {
-                    'cflags_cc': [],
+                    'conditions': [
+                        ['node_version>=17', {
+                            'cflags_cc': ['/DOPENSSL_CONFIGURED_API=0x10100000L', '/DOPENSSL_API_COMPAT=0x10100000L']
+                        }],
+                        ['node_version<17', {
+                            'cflags_cc': [],
+                        }],
+                    ],
                     'cflags_cc!': []
                 }]
             ]
