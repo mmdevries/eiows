@@ -5,33 +5,10 @@
 #include <uv.h>
 #include <cstring>
 
-#if NODE_MAJOR_VERSION>=10
 #define NODE_WANT_INTERNALS 1
-#if NODE_MAJOR_VERSION==10
-#include "node_10_headers/tls_wrap.h"
-#endif
-#if NODE_MAJOR_VERSION==12
-#if NODE_MINOR_VERSION>=18
-#include "node_12.18_headers/tls_wrap.h"
-#include "node_12.18_headers/base_object-inl.h"
-#else
-#include "node_12.16_headers/tls_wrap.h"
-#include "node_12.16_headers/base_object-inl.h"
-#endif
-#endif
-#if (NODE_MAJOR_VERSION==13 && NODE_MINOR_VERSION>=14)
-#include "node_13_headers/tls_wrap.h"
-#include "node_13_headers/base_object-inl.h"
-#endif
-#if (NODE_MAJOR_VERSION==14 && NODE_MINOR_VERSION>=13)
-#include "node_14.13_headers/tls_wrap.h"
-#include "node_14.13_headers/base_object-inl.h"
-#elif (NODE_MAJOR_VERSION==14 && NODE_MINOR_VERSION>=4)
+#if (NODE_MAJOR_VERSION==14)
 #include "node_14_headers/tls_wrap.h"
 #include "node_14_headers/base_object-inl.h"
-#endif
-#if NODE_MAJOR_VERSION==15
-#include "node_15_headers/crypto_tls.h"
 #endif
 #if NODE_MAJOR_VERSION==16
 #include "node_16_headers/crypto/crypto_tls.h"
@@ -41,7 +18,7 @@
 #endif
 
 using BaseObject = node::BaseObject;
-#if NODE_MAJOR_VERSION>=15
+#if NODE_MAJOR_VERSION>=16
 using TLSWrap = node::crypto::TLSWrap;
 #else
 using TLSWrap = node::TLSWrap;
@@ -51,7 +28,7 @@ class TLSWrapSSLGetter : public TLSWrap {
     public:
         void setSSL(const v8::FunctionCallbackInfo<v8::Value> &info){
             v8::Isolate* isolate = info.GetIsolate();
-#if NODE_MAJOR_VERSION>=15
+#if NODE_MAJOR_VERSION>=16
             if (!getSSL()){
 #else
             if (!ssl_){
@@ -59,7 +36,7 @@ class TLSWrapSSLGetter : public TLSWrap {
                 info.GetReturnValue().Set(v8::Null(isolate));
                 return;
             }
-#if NODE_MAJOR_VERSION>=15
+#if NODE_MAJOR_VERSION>=16
             SSL* ptr = getSSL()->get();
 #else
             SSL* ptr = ssl_.get();
@@ -69,7 +46,6 @@ class TLSWrapSSLGetter : public TLSWrap {
 };
 
 #if defined(_MSC_VER)
-  #if NODE_MAJOR_VERSION>10
     [[noreturn]] void node::Assert(const node::AssertionInfo& info) {
       char name[1024];
       char title[1024] = "Node.js";
@@ -79,25 +55,8 @@ class TLSWrapSSLGetter : public TLSWrap {
       fflush(stderr);
       ABORT_NO_BACKTRACE();
     }
-  #else
-    [[noreturn]] void node::Assert(const char* const (*args)[4]) {
-      auto filename = (*args)[0];
-      auto linenum = (*args)[1];
-      auto message = (*args)[2];
-      auto function = (*args)[3];
-      char name[1024];
-      char title[1024] = "Node.js";
-      uv_get_process_title(title, sizeof(title));
-      snprintf(name, sizeof(name), "%s[%d]", title, uv_os_getpid());
-      fprintf(stderr, "%s: %s:%s:%s%s Assertion `%s' failed.\n",
-              name, filename, linenum, function, *function ? ":" : "", message);
-      fflush(stderr);
-      ABORT_NO_BACKTRACE();
-    }
-  #endif
 #endif
 #undef NODE_WANT_INTERNALS
-#endif
 
 using namespace std;
 using namespace v8;
@@ -413,14 +372,9 @@ void getSSLContext(const FunctionCallbackInfo<Value> &args) {
     }
     Local<Context> context = isolate->GetCurrentContext();
     Local<Object> obj = args[0]->ToObject(context).ToLocalChecked();
-#if NODE_MAJOR_VERSION < 10
-    Local<Value> ext = obj->Get(String::NewFromUtf8(isolate, "_external"));
-    args.GetReturnValue().Set(ext);
-#else
     TLSWrapSSLGetter* tw;
     ASSIGN_OR_RETURN_UNWRAP(&tw, obj);
     tw->setSSL(args);
-#endif
 }
 
 void setNoop(const FunctionCallbackInfo<Value> &args) {

@@ -150,6 +150,7 @@ constexpr size_t kFsStatsBufferLength =
   V(contextify_context_private_symbol, "node:contextify:context")             \
   V(contextify_global_private_symbol, "node:contextify:global")               \
   V(decorated_private_symbol, "node:decorated")                               \
+  V(napi_type_tag, "node:napi:type_tag")                                      \
   V(napi_wrapper, "node:napi:wrapper")                                        \
   V(untransferable_object_private_symbol, "node:untransferableObject")        \
 
@@ -945,6 +946,9 @@ class Environment : public MemoryRetainer {
 
   void PrintSyncTrace() const;
   inline void set_trace_sync_io(bool value);
+
+  inline void set_force_context_aware(bool value);
+  inline bool force_context_aware() const;
 
   // This stores whether the --abort-on-uncaught-exception flag was passed
   // to Node.
