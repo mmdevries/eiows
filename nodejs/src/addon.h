@@ -71,8 +71,7 @@ void registerCheck(Isolate *isolate) {
     uv_check_start(&check, [](uv_check_t *check) {
         Isolate *isolate = (Isolate *)check->data;
         HandleScope hs(isolate);
-        // TODO: Check if we can use new callbback
-        node::MakeCallback(isolate, isolate->GetCurrentContext()->Global(), Local<Function>::New(isolate, noop), 0, nullptr);
+        Local<Function>::New(isolate, noop)->Call(isolate->GetCurrentContext(), Null(isolate), 0, nullptr);
     });
     uv_unref((uv_handle_t *)&check);
 }
@@ -97,37 +96,19 @@ class NativeString {
             length = node::Buffer::Length(value);
         } else if (value->IsTypedArray()) {
             Local<ArrayBufferView> arrayBufferView = Local<ArrayBufferView>::Cast(value);
-#if NODE_MAJOR_VERSION>=17
             auto contents = arrayBufferView->Buffer()->GetBackingStore();
             length = arrayBufferView->ByteLength();
             data = (char *) contents->Data() + arrayBufferView->ByteOffset();
-#else
-            ArrayBuffer::Contents contents = arrayBufferView->Buffer()->GetContents();
-            length = contents.ByteLength();
-            data = (char *)contents.Data();
-#endif
         } else if (value->IsArrayBuffer()) {
             Local<ArrayBuffer> arrayBuffer = Local<ArrayBuffer>::Cast(value);
-#if NODE_MAJOR_VERSION>=17
             auto contents = arrayBuffer->GetBackingStore();
             length = contents->ByteLength();
             data = (char *) contents->Data();
-#else
-            ArrayBuffer::Contents contents = arrayBuffer->GetContents();
-            length = contents.ByteLength();
-            data = (char *)contents.Data();
-#endif
         } else if (value->IsSharedArrayBuffer()) {
             Local<SharedArrayBuffer> arrayBuffer = Local<SharedArrayBuffer>::Cast(value);
-#if NODE_MAJOR_VERSION>=17
             auto contents = arrayBuffer->GetBackingStore();
             length = contents->ByteLength();
             data = (char *) contents->Data();
-#else
-            SharedArrayBuffer::Contents contents = arrayBuffer->GetContents();
-            length = contents.ByteLength();
-            data = (char *)contents.Data();
-#endif
         } else {
             static char empty[] = "";
             data = empty;
