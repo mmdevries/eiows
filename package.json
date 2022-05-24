@@ -1,6 +1,6 @@
 {
   "name": "eiows",
-  "version": "4.1.1",
+  "version": "4.1.2",
   "description": "custom fork of uWebSockets 0.14",
   "license": "MIT",
   "main": "./dist/eiows.js",
