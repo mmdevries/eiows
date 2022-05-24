@@ -16,6 +16,9 @@
 #if NODE_MAJOR_VERSION==17
 #include "node_17_headers/crypto/crypto_tls.h"
 #endif
+#if NODE_MAJOR_VERSION==18
+#include "node_18_headers/crypto/crypto_tls.h"
+#endif
 
 using BaseObject = node::BaseObject;
 #if NODE_MAJOR_VERSION>=16
