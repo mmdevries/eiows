@@ -305,13 +305,6 @@ v8::MaybeLocal<v8::Value> ExecuteBootstrapper(
     std::vector<v8::Local<v8::Value>>* arguments);
 void MarkBootstrapComplete(const v8::FunctionCallbackInfo<v8::Value>& args);
 
-struct InitializationResult {
-  int exit_code = 0;
-  std::vector<std::string> args;
-  std::vector<std::string> exec_args;
-  bool early_return = false;
-};
-
 enum InitializationSettingsFlags : uint64_t {
   kDefaultInitialization = 1 << 0,
   kInitializeV8 = 1 << 1,
@@ -320,6 +313,14 @@ enum InitializationSettingsFlags : uint64_t {
 };
 
 // TODO(codebytere): eventually document and expose to embedders.
+/*
+struct InitializationResult {
+  int exit_code = 0;
+  std::vector<std::string> args;
+  std::vector<std::string> exec_args;
+  bool early_return = false;
+};
+
 InitializationResult NODE_EXTERN_PRIVATE InitializeOncePerProcess(int argc,
                                                                   char** argv);
 InitializationResult NODE_EXTERN_PRIVATE InitializeOncePerProcess(
@@ -331,6 +332,7 @@ void NODE_EXTERN_PRIVATE TearDownOncePerProcess();
 void SetIsolateErrorHandlers(v8::Isolate* isolate, const IsolateSettings& s);
 void SetIsolateMiscHandlers(v8::Isolate* isolate, const IsolateSettings& s);
 void SetIsolateCreateParamsForNode(v8::Isolate::CreateParams* params);
+*/
 
 #if HAVE_INSPECTOR
 namespace profiler {
