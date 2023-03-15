@@ -5,62 +5,6 @@
 #include <uv.h>
 #include <cstring>
 
-#define NODE_WANT_INTERNALS 1
-#if (NODE_MAJOR_VERSION==14)
-#include "node_14_headers/tls_wrap.h"
-#include "node_14_headers/base_object-inl.h"
-#endif
-#if NODE_MAJOR_VERSION==16
-#include "node_16_headers/crypto/crypto_tls.h"
-#endif
-#if NODE_MAJOR_VERSION==17
-#include "node_17_headers/crypto/crypto_tls.h"
-#endif
-#if NODE_MAJOR_VERSION==18
-#include "node_18_headers/crypto/crypto_tls.h"
-#endif
-
-using BaseObject = node::BaseObject;
-#if NODE_MAJOR_VERSION>=16
-using TLSWrap = node::crypto::TLSWrap;
-#else
-using TLSWrap = node::TLSWrap;
-#endif
-
-class TLSWrapSSLGetter : public TLSWrap {
-    public:
-        void setSSL(const v8::FunctionCallbackInfo<v8::Value> &info){
-            v8::Isolate* isolate = info.GetIsolate();
-#if NODE_MAJOR_VERSION>=16
-            if (!getSSL()){
-#else
-            if (!ssl_){
-#endif
-                info.GetReturnValue().Set(v8::Null(isolate));
-                return;
-            }
-#if NODE_MAJOR_VERSION>=16
-            SSL* ptr = getSSL()->get();
-#else
-            SSL* ptr = ssl_.get();
-#endif
-            info.GetReturnValue().Set(v8::External::New(isolate, ptr));
-        }
-};
-
-#if defined(_MSC_VER)
-    [[noreturn]] void node::Assert(const node::AssertionInfo& info) {
-      char name[1024];
-      char title[1024] = "Node.js";
-      uv_get_process_title(title, sizeof(title));
-      snprintf(name, sizeof(name), "%s[%d]", title, uv_os_getpid());
-      fprintf(stderr, "%s: Assertion failed.\n", name);
-      fflush(stderr);
-      ABORT_NO_BACKTRACE();
-    }
-#endif
-#undef NODE_WANT_INTERNALS
-
 using namespace std;
 using namespace v8;
 
@@ -356,9 +300,8 @@ void getSSLContext(const FunctionCallbackInfo<Value> &args) {
     }
     Local<Context> context = isolate->GetCurrentContext();
     Local<Object> obj = args[0]->ToObject(context).ToLocalChecked();
-    TLSWrapSSLGetter* tw;
-    ASSIGN_OR_RETURN_UNWRAP(&tw, obj);
-    tw->setSSL(args);
+    Local<Value> ext = obj->Get(context, String::NewFromUtf8(isolate, "_external", NewStringType::kNormal).ToLocalChecked()).ToLocalChecked();
+    args.GetReturnValue().Set(ext);
 }
 
 void setNoop(const FunctionCallbackInfo<Value> &args) {
