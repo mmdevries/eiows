@@ -5,6 +5,11 @@ NODE=`(node --version)`
 default:
 	make nodesrc
 	make module
+	rm -rf nodejs/src/node
+	chmod u+x dist/eiows_$(NODE).node
+testbuild:
+	make nodesrc
+	make module
 	chmod u+x dist/eiows_$(NODE).node
 nodesrc:
 	git clone --depth 1 https://github.com/nodejs/node -b $(NODE) nodejs/src/node
