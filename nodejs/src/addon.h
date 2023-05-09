@@ -6,44 +6,20 @@
 #include <cstring>
 
 #define NODE_WANT_INTERNALS 1
-#if (NODE_MAJOR_VERSION==14)
-#include "node_14_headers/tls_wrap.h"
-#include "node_14_headers/base_object-inl.h"
-#endif
-#if NODE_MAJOR_VERSION==16
-#include "node_16_headers/crypto/crypto_tls.h"
-#endif
-#if NODE_MAJOR_VERSION==17
-#include "node_17_headers/crypto/crypto_tls.h"
-#endif
-#if NODE_MAJOR_VERSION==18
-#include "node_18_headers/crypto/crypto_tls.h"
-#endif
+#include "node/src/crypto/crypto_tls.h"
 
 using BaseObject = node::BaseObject;
-#if NODE_MAJOR_VERSION>=16
 using TLSWrap = node::crypto::TLSWrap;
-#else
-using TLSWrap = node::TLSWrap;
-#endif
 
 class TLSWrapSSLGetter : public TLSWrap {
     public:
         void setSSL(const v8::FunctionCallbackInfo<v8::Value> &info){
             v8::Isolate* isolate = info.GetIsolate();
-#if NODE_MAJOR_VERSION>=16
             if (!getSSL()){
-#else
-            if (!ssl_){
-#endif
                 info.GetReturnValue().Set(v8::Null(isolate));
                 return;
             }
-#if NODE_MAJOR_VERSION>=16
             SSL* ptr = getSSL()->get();
-#else
-            SSL* ptr = ssl_.get();
-#endif
             info.GetReturnValue().Set(v8::External::New(isolate, ptr));
         }
 };
