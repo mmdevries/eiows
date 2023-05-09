@@ -5,6 +5,38 @@
 #include <uv.h>
 #include <cstring>
 
+#define NODE_WANT_INTERNALS 1
+#include "node/src/crypto/crypto_tls.h"
+
+using BaseObject = node::BaseObject;
+using TLSWrap = node::crypto::TLSWrap;
+
+class TLSWrapSSLGetter : public TLSWrap {
+    public:
+        void setSSL(const v8::FunctionCallbackInfo<v8::Value> &info){
+            v8::Isolate* isolate = info.GetIsolate();
+            if (!getSSL()){
+                info.GetReturnValue().Set(v8::Null(isolate));
+                return;
+            }
+            SSL* ptr = getSSL()->get();
+            info.GetReturnValue().Set(v8::External::New(isolate, ptr));
+        }
+};
+
+#if defined(_MSC_VER)
+    [[noreturn]] void node::Assert(const node::AssertionInfo& info) {
+      char name[1024];
+      char title[1024] = "Node.js";
+      uv_get_process_title(title, sizeof(title));
+      snprintf(name, sizeof(name), "%s[%d]", title, uv_os_getpid());
+      fprintf(stderr, "%s: Assertion failed.\n", name);
+      fflush(stderr);
+      ABORT_NO_BACKTRACE();
+    }
+#endif
+#undef NODE_WANT_INTERNALS
+
 using namespace std;
 using namespace v8;
 
