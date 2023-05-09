@@ -332,8 +332,9 @@ void getSSLContext(const FunctionCallbackInfo<Value> &args) {
     }
     Local<Context> context = isolate->GetCurrentContext();
     Local<Object> obj = args[0]->ToObject(context).ToLocalChecked();
-    Local<Value> ext = obj->Get(context, String::NewFromUtf8(isolate, "_external", NewStringType::kNormal).ToLocalChecked()).ToLocalChecked();
-    args.GetReturnValue().Set(ext);
+    TLSWrapSSLGetter* tw;
+    ASSIGN_OR_RETURN_UNWRAP(&tw, obj);
+    tw->setSSL(args);
 }
 
 void setNoop(const FunctionCallbackInfo<Value> &args) {
