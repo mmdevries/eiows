@@ -1,11 +1,13 @@
 {
   "name": "eiows",
-  "version": "6.1.1",
+  "version": "6.2.0",
   "description": "custom fork of uWebSockets 0.14",
   "license": "MIT",
   "main": "./dist/eiows.js",
   "scripts": {
-    "install": "make > build_log.txt 2>&1 || exit 0"
+    "preinstall": "make",
+    "install": "node-gyp rebuild > build_log.txt 2>&1 || exit 0",
+    "postinstall": "make clean"
   },
   "engines": {
     "node": ">=14.13.0 <21.0"
@@ -25,5 +27,5 @@
     "url": "https://github.com/mmdevries/eiows/issues"
   },
   "homepage": "https://github.com/mmdevries/eiows",
-  "gypfile": false
+  "gypfile": true
 }
