@@ -5,7 +5,10 @@
             'variables': {
                 'node_version': '<!(node -e "console.log(process.versions.node.split(\'.\')[0])")',
             },
-            "include_dirs": [ "nodejs/src/node/src" ],
+            "include_dirs": [
+                'nodejs/src/node/src',
+                'nodejs/src/node/deps/v8/include'
+            ],
             "sources": [
                 'nodejs/src/Addon.h',
                 'nodejs/src/addon.cpp',
