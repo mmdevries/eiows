@@ -5,6 +5,7 @@
             'variables': {
                 'node_version': '<!(node -e "console.log(process.versions.node.split(\'.\')[0])")',
             },
+            "include_dirs": [ "nodejs/src/node" ],
             "sources": [
                 'nodejs/src/Addon.h',
                 'nodejs/src/addon.cpp',
