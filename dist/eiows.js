@@ -128,7 +128,7 @@ class Server {
         });
 
         native.server.group.onMessage(this.serverGroup, (message, webSocket) => {
-            webSocket.internalOnMessage(message);
+            webSocket.internalOnMessage(message, typeof message === 'object');
         });
 
         native.server.group.onConnection(this.serverGroup, (external) => {
