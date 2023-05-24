@@ -24,7 +24,6 @@
 #include <cstring>
 #define SOCKET_ERROR -1
 #define INVALID_SOCKET -1
-#define WIN32_EXPORT
 
 #include "Libuv.h"
 #include <openssl/ssl.h>
@@ -55,7 +54,7 @@ namespace uS {
     struct Socket;
 
     // NodeData is like a Context, maybe merge them?
-    struct WIN32_EXPORT NodeData {
+    struct NodeData {
         char *recvBufferMemoryBlock;
         char *recvBuffer;
         int recvLength;

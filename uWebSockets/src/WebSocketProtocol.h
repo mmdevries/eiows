@@ -50,7 +50,7 @@ namespace eioWS {
     };
 
     template <class Impl>
-        class WIN32_EXPORT WebSocketProtocol {
+        class WebSocketProtocol {
             public:
                 static const unsigned int SHORT_MESSAGE_HEADER = 6;
                 static const unsigned int MEDIUM_MESSAGE_HEADER = 8;

@@ -13,7 +13,7 @@ namespace eioWS {
 
     struct Hub;
 
-    struct WIN32_EXPORT Group : protected uS::NodeData {
+    struct Group : protected uS::NodeData {
         protected:
             friend struct Hub;
             friend struct WebSocket;

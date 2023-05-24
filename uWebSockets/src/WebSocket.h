@@ -8,7 +8,7 @@
 namespace eioWS {
     struct Group;
 
-    struct WIN32_EXPORT WebSocket : uS::Socket, WebSocketState {
+    struct WebSocket : uS::Socket, WebSocketState {
         protected:
             unsigned int maxPayload;
             std::string fragmentBuffer;

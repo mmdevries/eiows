@@ -9,7 +9,7 @@
 #include <map>
 
 namespace eioWS {
-    struct WIN32_EXPORT Hub : protected uS::Node, public Group {
+    struct Hub : protected uS::Node, public Group {
         protected:
             struct ConnectionData {
                 std::string path;

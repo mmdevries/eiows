@@ -100,13 +100,7 @@ namespace uS {
         }
 
         uv_os_sock_t getFd() const {
-#ifdef _WIN32
-            uv_os_sock_t fd;
-            uv_fileno((uv_handle_t *) uv_poll, (uv_os_fd_t *) &fd);
-            return fd;
-#else
             return uv_poll->io_watcher.fd;
-#endif
         }
 
         void setCb(void (*cb)(Poll *p, int status, int events)) {

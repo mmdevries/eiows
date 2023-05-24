@@ -5,7 +5,7 @@
 
 namespace uS {
     // perfectly 64 bytes (4 + 60)
-    struct WIN32_EXPORT Socket : Poll {
+    struct Socket : Poll {
         protected:
             struct {
                 int poll : 4;

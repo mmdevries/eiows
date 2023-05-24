@@ -6,7 +6,7 @@
 #include <mutex>
 
 namespace uS {
-    class WIN32_EXPORT Node {
+    class Node {
         protected:
             Loop *loop;
             NodeData *nodeData;
