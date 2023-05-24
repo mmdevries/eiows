@@ -24,10 +24,10 @@
                 ['OS=="linux"', {
                     'conditions': [
                         ['node_version>=17', {
-                            'cflags_cc': ['-std=c++17', '-Wno-unused-result', '-DOPENSSL_CONFIGURED_API=0x10100000L', '-DOPENSSL_API_COMPAT=0x10100000L']
+                            'cflags_cc': ['-std=c++17', '-Wno-cast-function-type', '-Wno-unused-result', '-DOPENSSL_CONFIGURED_API=0x10100000L', '-DOPENSSL_API_COMPAT=0x10100000L']
                         }],
                         ['node_version<17', {
-                            'cflags_cc': ['-std=c++17', '-Wno-unused-result'],
+                            'cflags_cc': ['-std=c++17', '-Wno-cast-function-type', '-Wno-unused-result'],
                         }],
                     ],
                     'cflags_cc!': ['-fno-exceptions', '-std=gnu++11', '-fno-rtti'],
@@ -38,10 +38,10 @@
                 ['OS=="freebsd"', {
                     'conditions': [
                         ['node_version>=17', {
-                            'cflags_cc': ['-std=c++17', '-DOPENSSL_CONFIGURED_API=0x10100000L', '-DOPENSSL_API_COMPAT=0x10100000L']
+                            'cflags_cc': ['-std=c++17', '-Wno-cast-function-type', '-DOPENSSL_CONFIGURED_API=0x10100000L', '-DOPENSSL_API_COMPAT=0x10100000L']
                         }],
                         ['node_version<17', {
-                            'cflags_cc': ['-std=c++17'],
+                            'cflags_cc': ['-std=c++17', '-Wno-cast-function-type'],
                         }],
                     ],
                     'cflags_cc!': ['-fno-exceptions', '-std=gnu++11', '-fno-rtti'],
@@ -62,7 +62,7 @@
                         'OTHER_CFLAGS!': ['-fno-strict-aliasing'],
                         'conditions': [
                             ['node_version>=17', {
-                                'OTHER_CPLUSPLUSFLAGS': ['-DOPENSSL_CONFIGURED_API=0x10100000L', '-DOPENSSL_API_COMPAT=0x10100000L']
+                                'OTHER_CPLUSPLUSFLAGS': ['-Wno-cast-function-type', '-DOPENSSL_CONFIGURED_API=0x10100000L', '-DOPENSSL_API_COMPAT=0x10100000L']
                             }],
                             ['node_version<17', {
                                 'OTHER_CPLUSPLUSFLAGS': []
