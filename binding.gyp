@@ -22,28 +22,14 @@
             ],
             'conditions': [
                 ['OS=="linux"', {
-                    'conditions': [
-                        ['node_version>=17', {
-                            'cflags_cc': ['-std=c++17', '-Wno-cast-function-type', '-Wno-unused-result', '-DOPENSSL_CONFIGURED_API=0x10100000L', '-DOPENSSL_API_COMPAT=0x10100000L']
-                        }],
-                        ['node_version<17', {
-                            'cflags_cc': ['-std=c++17', '-Wno-cast-function-type', '-Wno-unused-result'],
-                        }],
-                    ],
+                    'cflags_cc': ['-std=c++17', '-Wno-cast-function-type', '-Wno-unused-result'],
                     'cflags_cc!': ['-fno-exceptions', '-std=gnu++11', '-fno-rtti'],
                     'cflags!': ['-fno-omit-frame-pointer'],
                     'ldflags!': ['-rdynamic'],
                     'ldflags': ['-s']
                 }],
                 ['OS=="freebsd"', {
-                    'conditions': [
-                        ['node_version>=17', {
-                            'cflags_cc': ['-std=c++17', '-Wno-cast-function-type', '-DOPENSSL_CONFIGURED_API=0x10100000L', '-DOPENSSL_API_COMPAT=0x10100000L']
-                        }],
-                        ['node_version<17', {
-                            'cflags_cc': ['-std=c++17', '-Wno-cast-function-type'],
-                        }],
-                    ],
+                    'cflags_cc': ['-std=c++17', '-Wno-cast-function-type'],
                     'cflags_cc!': ['-fno-exceptions', '-std=gnu++11', '-fno-rtti'],
                     'cflags!': ['-fno-omit-frame-pointer'],
                     'ldflags!': ['-rdynamic'],
@@ -60,63 +46,25 @@
                         'GCC_OPTIMIZATION_LEVEL': '3',
                         'GCC_ENABLE_CPP_RTTI': 'YES',
                         'OTHER_CFLAGS!': ['-fno-strict-aliasing'],
-                        'conditions': [
-                            ['node_version>=17', {
-                                'OTHER_CPLUSPLUSFLAGS': ['-Wno-cast-function-type', '-DOPENSSL_CONFIGURED_API=0x10100000L', '-DOPENSSL_API_COMPAT=0x10100000L']
-                            }],
-                            ['node_version<17', {
-                                'OTHER_CPLUSPLUSFLAGS': []
-                            }],
-                        ],
+                        'OTHER_CPLUSPLUSFLAGS': ['-Wno-cast-function-type']
                     }
-                }],
-                ['OS=="win"', {
-                    'conditions': [
-                        ['node_version>=17', {
-                            'cflags_cc': ['/DOPENSSL_CONFIGURED_API=0x10100000L', '/DOPENSSL_API_COMPAT=0x10100000L']
-                        }],
-                        ['node_version<17', {
-                            'cflags_cc': [],
-                        }],
-                    ],
-                    'cflags_cc!': []
                 }]
-            ]
         },
         {
             'target_name': 'action_after_build',
             'type': 'none',
             'dependencies': ['eiows'],
-            'conditions': [
-                ['OS!="win"', {
-                    'actions': [
-                        {
-                            'action_name': 'move_lib',
-                            'inputs': [
-                                '<@(PRODUCT_DIR)/eiows.node'
-                            ],
-                            'outputs': [
-                                'eiows'
-                            ],
-                            'action': ['cp', '<@(PRODUCT_DIR)/eiows.node', 'dist/eiows_<!@(node -p process.platform)_<!@(node -p process.versions.modules).node']
-                        }
-                    ]}
-                 ],
-                ['OS=="win"', {
-                    'actions': [
-                        {
-                            'action_name': 'move_lib',
-                            'inputs': [
-                                '<@(PRODUCT_DIR)/eiows.node'
-                            ],
-                            'outputs': [
-                                'eiows'
-                            ],
-                            'action': ['copy', '<@(PRODUCT_DIR)/eiows.node', 'dist/eiows_<!@(node -p process.platform)_<!@(node -p process.versions.modules).node']
-                        }
-                    ]}
-                 ]
+            'actions': [
+                {
+                    'action_name': 'move_lib',
+                    'inputs': [
+                        '<@(PRODUCT_DIR)/eiows.node'
+                    ],
+                    'outputs': [
+                        'eiows'
+                    ],
+                    'action': ['cp', '<@(PRODUCT_DIR)/eiows.node', 'dist/eiows_<!@(node -p process.platform)_<!@(node -p process.versions.modules).node']
+                }
             ]
         }
-    ]
 }
