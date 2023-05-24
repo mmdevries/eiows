@@ -49,6 +49,7 @@
                         'OTHER_CPLUSPLUSFLAGS': ['-Wno-cast-function-type']
                     }
                 }]
+            ]
         },
         {
             'target_name': 'action_after_build',
@@ -67,4 +68,5 @@
                 }
             ]
         }
+    ]
 }
