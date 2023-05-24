@@ -23,18 +23,6 @@ class TLSWrapSSLGetter : public TLSWrap {
             info.GetReturnValue().Set(v8::External::New(isolate, ptr));
         }
 };
-
-#if defined(_MSC_VER)
-    [[noreturn]] void node::Assert(const node::AssertionInfo& info) {
-      char name[1024];
-      char title[1024] = "Node.js";
-      uv_get_process_title(title, sizeof(title));
-      snprintf(name, sizeof(name), "%s[%d]", title, uv_os_getpid());
-      fprintf(stderr, "%s: Assertion failed.\n", name);
-      fflush(stderr);
-      ABORT_NO_BACKTRACE();
-    }
-#endif
 #undef NODE_WANT_INTERNALS
 
 using namespace std;
