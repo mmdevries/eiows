@@ -22,10 +22,10 @@ function abortConnection(socket, code, message) {
 
 const native = (() => {
     try {
-        return require(`./eiows_${process.platform}_${process.versions.modules}`);
+        return require(`./eiows_${process.version}`);
     } catch (e) {
-        throw new Error(e.toString() + '\n\nCompilation of µWebSockets has failed and there is no correct pre-compiled binary ' +
-            'available for your system or an unsupported node version is used. Please install a supported C++17 compiler or update node and reinstall the module \'eiows\'.');
+        throw new Error(e.toString() + '\n\nCompilation of µWebSockets has failed.' +
+            'Please install a supported C++17 compiler, git and/or update node and reinstall the module \'eiows\'.');
     }
 })();
 

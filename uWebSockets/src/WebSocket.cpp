@@ -277,9 +277,8 @@ namespace eioWS {
             memcpy(upgradeBuffer + upgradeResponseLength + 24 + subprotocolLength, "\r\n", 2);
             upgradeResponseLength += 24 + subprotocolLength + 2;
         }
-        static char stamp[] = "Sec-WebSocket-Version: 13\r\nWebSocket-Server: uWebSockets\r\n\r\n";
-        memcpy(upgradeBuffer + upgradeResponseLength, stamp, sizeof(stamp) - 1);
-        upgradeResponseLength += sizeof(stamp) - 1;
+        memcpy(upgradeBuffer + upgradeResponseLength, "\r\n", 2);
+        upgradeResponseLength += 2;
 
         messagePtr = allocMessage(upgradeResponseLength, upgradeBuffer);
 

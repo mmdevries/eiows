@@ -64,7 +64,7 @@
                     'outputs': [
                         'eiows'
                     ],
-                    'action': ['cp', '<@(PRODUCT_DIR)/eiows.node', 'dist/eiows_<!@(node -p process.platform)_<!@(node -p process.versions.modules).node']
+                    'action': ['cp', '<@(PRODUCT_DIR)/eiows.node', 'dist/eiows_<!@(node -p process.version).node']
                 }
             ]
         }
