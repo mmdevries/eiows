@@ -46,11 +46,7 @@ namespace eioWS {
 
         webSocket->hasOutstandingPong = false;
         if (!webSocket->isShuttingDown()) {
-            webSocket->cork(true);
             WebSocketProtocol<WebSocket>::consume(data, (unsigned int) length, webSocket);
-            if (!webSocket->isClosed()) {
-                webSocket->cork(false);
-            }
         }
 
         return webSocket;

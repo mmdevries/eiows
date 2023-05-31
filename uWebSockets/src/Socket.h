@@ -112,7 +112,6 @@ namespace uS {
                     }
 
                     if (!socket->messageQueue.empty() && ((events & UV_WRITABLE) || SSL_want(socket->ssl) == SSL_READING)) {
-                        socket->cork(true);
                         while (true) {
                             Queue::Message *messagePtr = socket->messageQueue.front();
                             ssize_t sent = SSL_write(socket->ssl, messagePtr->data, (int) messagePtr->length);
@@ -148,7 +147,6 @@ namespace uS {
                                 break;
                             }
                         }
-                        socket->cork(false);
                     }
 
                     if (events & UV_READABLE) {
@@ -197,7 +195,6 @@ namespace uS {
 
                     if (events & UV_WRITABLE) {
                         if (!socket->messageQueue.empty() && (events & UV_WRITABLE)) {
-                            socket->cork(true);
                             while (true) {
                                 Queue::Message *messagePtr = socket->messageQueue.front();
                                 ssize_t sent = ::send(socket->getFd(), messagePtr->data, messagePtr->length, MSG_NOSIGNAL);
@@ -223,7 +220,6 @@ namespace uS {
                                     break;
                                 }
                             }
-                            socket->cork(false);
                         }
                     }
 
@@ -417,20 +413,6 @@ namespace uS {
 
             void setNoDelay(int enable) const {
                 setsockopt(getFd(), IPPROTO_TCP, TCP_NODELAY, &enable, sizeof(int));
-            }
-
-            void cork(int enable) {
-#if defined(TCP_CORK)
-                // Linux & SmartOS have proper TCP_CORK
-                setsockopt(getFd(), IPPROTO_TCP, TCP_CORK, &enable, sizeof(int));
-#elif defined(TCP_NOPUSH)
-                // Mac OS X & FreeBSD have TCP_NOPUSH
-                setsockopt(getFd(), IPPROTO_TCP, TCP_NOPUSH, &enable, sizeof(int));
-                if (!enable) {
-                    // Tested on OS X, FreeBSD situation is unclear
-                    ::send(getFd(), "", 0, MSG_NOSIGNAL);
-                }
-#endif
             }
 
             void shutdown() {
