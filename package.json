@@ -1,9 +1,16 @@
 {
   "name": "eiows",
-  "version": "6.5.1",
+  "version": "6.6.0",
   "description": "custom fork of uWebSockets 0.14",
   "license": "MIT",
   "main": "./dist/eiows.js",
+  "exports": {
+    ".": {
+      "import": "./dist/wrapper.mjs",
+      "require": "./dist/eiows.js"
+    },
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "preinstall": "make",
     "install": "node-gyp rebuild > build_log.txt 2>&1 || exit 0",
