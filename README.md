@@ -12,19 +12,28 @@ yarn add eiows
 
 Examples:
 
-If you use engine.io version 5.0.0 or higher:
+    // ESM
+    import * as http from 'http';
+    import { Server } from "socket.io";
+    import { eiows } from 'eiows';
 
-    var fs = require('fs');
-    var https = require('https');
+    let server = http.createServer();
 
-    var ssl_options = {
-        key: fs.readFileSync('server.key'),
-        cert: fs.readFileSync('server.crt'),
-    };
+    let io = new Server(server, {
+        wsEngine: eiows.Server,
+        perMessageDeflate: {
+            threshold: 32768
+        }
+    });
 
-    var server = https.createServer(ssl_options);
+    io.on("connection", () => {
+        console.log('Yes, you did it!');
+    });
+    server.listen(8080);
 
-    server.listen(1443);
+    // CJS
+    var http = require('http');
+    var server = http.createServer();
 
     var io = require("socket.io")(server, {
         wsEngine: require("eiows").Server,
@@ -36,30 +45,6 @@ If you use engine.io version 5.0.0 or higher:
     io.on("connection", function(socket) {
         console.log('Yes, you did it!');
     });
-
-If you use engine.io version 3.4.2 till version 5.0.0:
-
-    var fs = require('fs');
-    var https = require('https');
-
-    var ssl_options = {
-        key: fs.readFileSync('server.key'),
-        cert: fs.readFileSync('server.crt'),
-    };
-
-    var server = https.createServer(ssl_options);
-
-    server.listen(1443);
-
-    var io = require("socket.io")(server, {
-        wsEngine: 'eiows',
-        perMessageDeflate: {
-            threshold: 32768
-        }
-    });
-
-    io.on("connection", function(socket) {
-        console.log('Yes, you did it!');
-    });
+    server.listen(8080);
 
 Have fun!
