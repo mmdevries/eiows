@@ -22,14 +22,14 @@
             ],
             'conditions': [
                 ['OS=="linux"', {
-                    'cflags_cc': ['-std=c++17', '-Wno-cast-function-type', '-Wno-unused-result'],
+                    'cflags_cc': ['-std=c++17', '-Wno-cast-function-type', '-Wno-unused-result', '-DHAVE_OPENSSL=1'],
                     'cflags_cc!': ['-fno-exceptions', '-std=gnu++11', '-fno-rtti'],
                     'cflags!': ['-fno-omit-frame-pointer'],
                     'ldflags!': ['-rdynamic'],
                     'ldflags': ['-s']
                 }],
                 ['OS=="freebsd"', {
-                    'cflags_cc': ['-std=c++17', '-Wno-cast-function-type'],
+                    'cflags_cc': ['-std=c++17', '-Wno-cast-function-type', '-DHAVE_OPENSSL=1'],
                     'cflags_cc!': ['-fno-exceptions', '-std=gnu++11', '-fno-rtti'],
                     'cflags!': ['-fno-omit-frame-pointer'],
                     'ldflags!': ['-rdynamic'],
@@ -46,7 +46,7 @@
                         'GCC_OPTIMIZATION_LEVEL': '3',
                         'GCC_ENABLE_CPP_RTTI': 'YES',
                         'OTHER_CFLAGS!': ['-fno-strict-aliasing'],
-                        'OTHER_CPLUSPLUSFLAGS': ['-Wno-cast-function-type']
+                        'OTHER_CPLUSPLUSFLAGS': ['-Wno-cast-function-type', '-DHAVE_OPENSSL=1']
                     }
                 }]
             ]
