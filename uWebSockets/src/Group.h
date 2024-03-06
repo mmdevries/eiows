@@ -3,14 +3,9 @@
 
 #include "WebSocket.h"
 #include "Extensions.h"
-#include <functional>
 #include <stack>
 
 namespace eioWS {
-    enum ListenOptions {
-        TRANSFERS
-    };
-
     struct Hub;
 
     struct Group : protected uS::NodeData {

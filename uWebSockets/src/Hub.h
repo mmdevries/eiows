@@ -1,12 +1,12 @@
 #ifndef HUB_UWS_H
 #define HUB_UWS_H
 
-#include "Group.h"
-#include "Node.h"
-#include <string>
 #include <zlib.h>
+#include <string>
 #include <mutex>
 #include <map>
+#include "Group.h"
+#include "Node.h"
 
 namespace eioWS {
     struct Hub : protected uS::Node, public Group {

@@ -190,10 +190,9 @@ namespace eioWS {
                 // https://www.cl.cam.ac.uk/~mgk25/ucs/utf8_check.c
                 // Optimized for predominantly 7-bit content by Alex Hultman, 2016
                 // Licensed as Zlib, like the rest of this project
-                static bool isValidUtf8(unsigned char *s, size_t length)
-                {
+                static bool isValidUtf8(unsigned char *s, size_t length) {
                     for (unsigned char *e = s + length; s != e; ) {
-                        if (s + 4 <= e && ((*(uint32_t *) s) & 0x80808080) == 0) {
+                        if (s + 4 <= e && ((*reinterpret_cast<uint32_t *>(s)) & 0x80808080) == 0) {
                             s += 4;
                         } else {
                             while (!(*s & 0x80)) {
@@ -268,11 +267,11 @@ namespace eioWS {
                     } else if (reportedLength <= UINT16_MAX) {
                         headerLength = 4;
                         dst[1] = 126;
-                        *((uint16_t *) &dst[2]) = htons(reportedLength);
+                        *(reinterpret_cast<uint16_t *>(&dst[2])) = htons(reportedLength);
                     } else {
                         headerLength = 10;
                         dst[1] = 127;
-                        *((uint64_t *) &dst[2]) = htobe64(reportedLength);
+                        *(reinterpret_cast<uint64_t *>(&dst[2])) = htobe64(reportedLength);
                     }
 
                     dst[0] = 128 | (compressed ? SND_COMPRESSED : 0) | opCode;
@@ -307,12 +306,12 @@ parseNext:
                             } else if (payloadLength(src) == 126) {
                                 if (length < MEDIUM_MESSAGE_HEADER) {
                                     break;
-                                } else if(consumeMessage<MEDIUM_MESSAGE_HEADER, uint16_t>(ntohs(*(uint16_t *) &src[2]), src, length, wState)) {
+                                } else if (consumeMessage<MEDIUM_MESSAGE_HEADER, uint16_t>(ntohs(*reinterpret_cast<uint16_t *>(&src[2])), src, length, wState)) {
                                     return;
                                 }
                             } else if (length < LONG_MESSAGE_HEADER) {
                                 break;
-                            } else if (consumeMessage<LONG_MESSAGE_HEADER, uint64_t>(be64toh(*(uint64_t *) &src[2]), src, length, wState)) {
+                            } else if (consumeMessage<LONG_MESSAGE_HEADER, uint64_t>(be64toh(*reinterpret_cast<uint64_t *>(&src[2])), src, length, wState)) {
                                 return;
                             }
                         }

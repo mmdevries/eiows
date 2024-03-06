@@ -1,6 +1,7 @@
 #ifndef WEBSOCKET_UWS_H
 #define WEBSOCKET_UWS_H
 
+#include <string>
 #include "WebSocketProtocol.h"
 #include "Socket.h"
 

@@ -1,5 +1,8 @@
 #include "WebSocket.h"
 #include "Hub.h"
+#include <utility>
+#include <algorithm>
+#include <string>
 
 namespace eioWS {
     WebSocket::WebSocket(unsigned int maxP, bool perMessageDeflate, uS::Socket *socket) :
@@ -30,14 +33,14 @@ namespace eioWS {
         struct WebSocketTransformer {
             static size_t transform(const char *src, char *dst, size_t length, TransformData transformData) {
                 if (transformData.compress) {
-                    char *deflated = Group::from(transformData.s)->hub->deflate((char *) src, length, (z_stream *) transformData.s->slidingDeflateWindow);
+                    char *deflated = Group::from(transformData.s)->hub->deflate(const_cast<char *>(src), length, reinterpret_cast<z_stream *>(transformData.s->slidingDeflateWindow));
                     return WebSocketProtocol<WebSocket>::formatMessage(dst, deflated, length, transformData.opCode, length, true);
                 }
                 return WebSocketProtocol<WebSocket>::formatMessage(dst, src, length, transformData.opCode, length, false);
             }
         };
 
-        sendTransformed<WebSocketTransformer>((char *) message, length, (void(*)(void *, void *, bool, void *)) callback, callbackData, transformData);
+        sendTransformed<WebSocketTransformer>(const_cast<char *>(message), length, (void(*)(void *, void *, bool, void *)) callback, callbackData, transformData);
     }
 
     uS::Socket *WebSocket::onData(uS::Socket *s, char *data, size_t length) {
@@ -78,13 +81,13 @@ namespace eioWS {
         setShuttingDown(true);
         length = std::min<size_t>(MAX_CLOSE_PAYLOAD, length);
         Group::from(this)->removeWebSocket(this);
-        Group::from(this)->disconnectionHandler(this, code, (char *) message, length);
+        Group::from(this)->disconnectionHandler(this, code, const_cast<char *>(message), length);
 
 
         startTimeout<WebSocket::onEnd>();
 
         char closePayload[MAX_CLOSE_PAYLOAD + 2];
-        int closePayloadLength = (int) WebSocketProtocol<WebSocket>::formatClosePayload(closePayload, code, message, length);
+        int closePayloadLength = static_cast<int>(WebSocketProtocol<WebSocket>::formatClosePayload(closePayload, code, message, length));
         send(closePayload, closePayloadLength, OpCode::CLOSE, [](WebSocket *p, void *data, bool cancelled, void *reserved) {
             if (!cancelled) {
                 p->shutdown();
@@ -116,8 +119,8 @@ namespace eioWS {
         // remove any per-websocket zlib memory
         if (webSocket->slidingDeflateWindow) {
             // this relates to Hub::allocateDefaultCompressor
-            deflateEnd((z_stream *) webSocket->slidingDeflateWindow);
-            delete (z_stream *) webSocket->slidingDeflateWindow;
+            deflateEnd(reinterpret_cast<z_stream *>(webSocket->slidingDeflateWindow));
+            delete reinterpret_cast<z_stream *>(webSocket->slidingDeflateWindow);
             webSocket->slidingDeflateWindow = nullptr;
         }
     }
@@ -154,13 +157,13 @@ namespace eioWS {
                     if (webSocket->compressionStatus == WebSocket::CompressionStatus::COMPRESSED_FRAME) {
                         webSocket->compressionStatus = WebSocket::CompressionStatus::ENABLED;
                         webSocket->fragmentBuffer.append("....");
-                        data = group->hub->inflate((char *) webSocket->fragmentBuffer.data(), length, group->maxPayload);
+                        data = group->hub->inflate(reinterpret_cast<char *>(webSocket->fragmentBuffer.data()), length, group->maxPayload);
                         if (!data) {
                             forceClose(webSocketState);
                             return true;
                         }
                     } else {
-                        data = (char *) webSocket->fragmentBuffer.data();
+                        data = reinterpret_cast<char *>(webSocket->fragmentBuffer.data());
                     }
 
                     if (opCode == 1 && !WebSocketProtocol<WebSocket>::isValidUtf8((unsigned char *) data, length)) {
@@ -198,7 +201,7 @@ namespace eioWS {
                 webSocket->controlTipLength += length;
 
                 if (!remainingBytes && fin) {
-                    char *controlBuffer = (char *) webSocket->fragmentBuffer.data() + webSocket->fragmentBuffer.length() - webSocket->controlTipLength;
+                    char *controlBuffer = reinterpret_cast<char *>(webSocket->fragmentBuffer.data()) + webSocket->fragmentBuffer.length() - webSocket->controlTipLength;
                     if (opCode == CLOSE) {
                         typename WebSocketProtocol<WebSocket>::CloseFrame closeFrame = WebSocketProtocol<WebSocket>::parseClosePayload(controlBuffer, webSocket->controlTipLength);
                         webSocket->close(closeFrame.code, closeFrame.message, closeFrame.length);

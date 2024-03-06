@@ -3,8 +3,8 @@
 
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+#include <algorithm>
 #include "Networking.h"
-#include "Libuv.h"
 
 namespace uS {
     // perfectly 64 bytes (4 + 60)
@@ -34,10 +34,10 @@ namespace uS {
                 {
                     Message *nextMessage;
                     if ((nextMessage = head->nextMessage)) {
-                        delete [] (char *) head;
+                        delete [] reinterpret_cast<char *>(head);
                         head = nextMessage;
                     } else {
-                        delete [] (char *) head;
+                        delete [] reinterpret_cast<char *>(head);
                         head = tail = nullptr;
                     }
                 }
@@ -117,7 +117,7 @@ namespace uS {
                     if (!socket->messageQueue.empty() && ((events & UV_WRITABLE) || SSL_want(socket->ssl) == SSL_READING)) {
                         while (true) {
                             Queue::Message *messagePtr = socket->messageQueue.front();
-                            ssize_t sent = SSL_write(socket->ssl, messagePtr->data, (int) messagePtr->length);
+                            ssize_t sent = SSL_write(socket->ssl, messagePtr->data, static_cast<int>(messagePtr->length));
                             if (sent == (ssize_t) messagePtr->length) {
                                 if (messagePtr->callback) {
                                     messagePtr->callback(p, messagePtr->callbackData, false, messagePtr->reserved);
@@ -227,7 +227,7 @@ namespace uS {
                     }
 
                     if (events & UV_READABLE) {
-                        int length = (int) recv(socket->getFd(), nodeData->recvBuffer, nodeData->recvLength, 0);
+                        int length = static_cast<int>(recv(socket->getFd(), nodeData->recvBuffer, nodeData->recvLength, 0));
                         if (length > 0) {
                             STATE::onData(static_cast<Socket *>(p), nodeData->recvBuffer, length);
                         } else if (length <= 0 || (length == SOCKET_ERROR && !netContext->wouldBlock())) {
@@ -256,18 +256,18 @@ namespace uS {
             Queue::Message *allocMessage(size_t length, const char *data = 0) {
                 Queue::Message *messagePtr = (Queue::Message *) new char[sizeof(Queue::Message) + length];
                 messagePtr->length = length;
-                messagePtr->data = ((char *) messagePtr) + sizeof(Queue::Message);
+                messagePtr->data = (reinterpret_cast<char *>(messagePtr)) + sizeof(Queue::Message);
                 messagePtr->nextMessage = nullptr;
 
                 if (data) {
-                    memcpy((char *) messagePtr->data, data, messagePtr->length);
+                    memcpy(const_cast<char *>(messagePtr->data), data, messagePtr->length);
                 }
 
                 return messagePtr;
             }
 
             static void freeMessage(Queue::Message *message) {
-                delete [] (char *) message;
+                delete [] reinterpret_cast<char *>(message);
             }
 
             bool write(Queue::Message *message, bool &waiting) {
@@ -275,12 +275,12 @@ namespace uS {
                 if (messageQueue.empty()) {
                     ssize_t sent = 0;
                     if (ssl) {
-                        sent = SSL_write(ssl, message->data, (int) message->length);
+                        sent = SSL_write(ssl, message->data, static_cast<int>(message->length));
                         if (sent == (ssize_t) message->length) {
                             waiting = false;
                             return true;
                         } else if (sent < 0) {
-                            switch (SSL_get_error(ssl, (int) sent)) {
+                            switch (SSL_get_error(ssl, static_cast<int>(sent))) {
                                 case SSL_ERROR_WANT_READ:
                                     break;
                                 case SSL_ERROR_WANT_WRITE:
@@ -328,17 +328,17 @@ namespace uS {
 
                     if (hasEmptyQueue()) {
                         if (estimatedLength <= uS::NodeData::preAllocMaxSize) {
-                            int memoryLength = (int) estimatedLength;
+                            int memoryLength = static_cast<int>(estimatedLength);
                             int memoryIndex = nodeData->getMemoryBlockIndex(memoryLength);
 
                             Queue::Message *messagePtr = (Queue::Message *) nodeData->getSmallMemoryBlock(memoryIndex);
-                            messagePtr->data = ((char *) messagePtr) + sizeof(Queue::Message);
-                            messagePtr->length = T::transform(message, (char *) messagePtr->data, length, transformData);
+                            messagePtr->data = (reinterpret_cast<char *>(messagePtr)) + sizeof(Queue::Message);
+                            messagePtr->length = T::transform(message, const_cast<char *>(messagePtr->data), length, transformData);
 
                             bool waiting;
                             if (write(messagePtr, waiting)) {
                                 if (!waiting) {
-                                    nodeData->freeSmallMemoryBlock((char *) messagePtr, memoryIndex);
+                                    nodeData->freeSmallMemoryBlock(reinterpret_cast<char *>(messagePtr), memoryIndex);
                                     if (callback) {
                                         callback(this, callbackData, false, nullptr);
                                     }
@@ -347,14 +347,14 @@ namespace uS {
                                     messagePtr->callbackData = callbackData;
                                 }
                             } else {
-                                nodeData->freeSmallMemoryBlock((char *) messagePtr, memoryIndex);
+                                nodeData->freeSmallMemoryBlock(reinterpret_cast<char *>(messagePtr), memoryIndex);
                                 if (callback) {
                                     callback(this, callbackData, true, nullptr);
                                 }
                             }
                         } else {
                             Queue::Message *messagePtr = allocMessage(estimatedLength - sizeof(Queue::Message));
-                            messagePtr->length = T::transform(message, (char *) messagePtr->data, length, transformData);
+                            messagePtr->length = T::transform(message, const_cast<char *>(messagePtr->data), length, transformData);
 
                             bool waiting;
                             if (write(messagePtr, waiting)) {
@@ -376,7 +376,7 @@ namespace uS {
                         }
                     } else {
                         Queue::Message *messagePtr = allocMessage(estimatedLength - sizeof(Queue::Message));
-                        messagePtr->length = T::transform(message, (char *) messagePtr->data, length, transformData);
+                        messagePtr->length = T::transform(message, const_cast<char *>(messagePtr->data), length, transformData);
                         messagePtr->callback = callback;
                         messagePtr->callbackData = callbackData;
                         enqueue(messagePtr);
@@ -387,7 +387,7 @@ namespace uS {
             Socket(NodeData *nodeData, Loop *loop, uv_os_sock_t fd, SSL *ssl) : Poll(loop, fd), ssl(ssl), nodeData(nodeData) {
                 if (ssl) {
                     // OpenSSL treats SOCKETs as int
-                    SSL_set_fd(ssl, (int) fd);
+                    SSL_set_fd(ssl, static_cast<int>(fd));
                     SSL_set_mode(ssl, SSL_MODE_RELEASE_BUFFERS);
                 }
             }
@@ -439,7 +439,7 @@ namespace uS {
                 }
 
                 Poll::close([](Poll *p) {
-                    delete (T *) p;
+                    delete reinterpret_cast<T *>(p);
                 });
             }
 

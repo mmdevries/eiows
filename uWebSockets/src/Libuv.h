@@ -27,7 +27,7 @@ namespace uS {
         }
 
         void close() {
-            uv_close((uv_handle_t *) &uv_async, [](uv_handle_t *a) {
+            uv_close(reinterpret_cast<uv_handle_t *>(&uv_async), [](uv_handle_t *a) {
                 delete reinterpret_cast<Async *>(a);
             });
         }
@@ -65,7 +65,7 @@ namespace uS {
         }
 
         void close() {
-            uv_close((uv_handle_t *) &uv_timer, [](uv_handle_t *t) {
+            uv_close(reinterpret_cast<uv_handle_t *>(&uv_timer), [](uv_handle_t *t) {
                 delete reinterpret_cast<Timer *>(t);
             });
         }
@@ -129,7 +129,7 @@ namespace uS {
 
         void close(void (*cb)(Poll *)) {
             this->cb = (void(*)(Poll *, int, int)) cb;
-            uv_close((uv_handle_t *) uv_poll, [](uv_handle_t *p) {
+            uv_close(reinterpret_cast<uv_handle_t *>(uv_poll), [](uv_handle_t *p) {
                 Poll *poll = static_cast<Poll *>(p->data);
                 void (*cb)(Poll *) = (void(*)(Poll *)) poll->cb;
                 cb(poll);

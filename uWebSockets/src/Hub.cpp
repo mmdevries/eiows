@@ -13,7 +13,7 @@ namespace eioWS {
 
         z_stream *compressor = slidingDeflateWindow ? slidingDeflateWindow : &deflationStream;
 
-        compressor->next_in = (Bytef *) data;
+        compressor->next_in = reinterpret_cast<Bytef *>(data);
         compressor->avail_in = (unsigned int) length;
 
         // note: zlib requires more than 6 bytes with Z_SYNC_FLUSH
@@ -21,7 +21,7 @@ namespace eioWS {
 
         int err;
         do {
-            compressor->next_out = (Bytef *) zlibBuffer;
+            compressor->next_out = reinterpret_cast<Bytef *>(zlibBuffer);
             compressor->avail_out = DEFLATE_OUTPUT_CHUNK;
 
             err = ::deflate(compressor, Z_SYNC_FLUSH);
@@ -42,7 +42,7 @@ namespace eioWS {
             dynamicZlibBuffer.append(zlibBuffer, DEFLATE_OUTPUT_CHUNK - compressor->avail_out);
 
             length = dynamicZlibBuffer.length() - 4;
-            return (char *) dynamicZlibBuffer.data();
+            return reinterpret_cast<char *>(dynamicZlibBuffer.data());
         }
 
         length = DEFLATE_OUTPUT_CHUNK - compressor->avail_out - 4;
@@ -53,12 +53,12 @@ namespace eioWS {
     char *Hub::inflate(char *data, size_t &length, size_t maxPayload) {
         dynamicZlibBuffer.clear();
 
-        inflationStream.next_in = (Bytef *) data;
+        inflationStream.next_in = reinterpret_cast<Bytef *>(data);
         inflationStream.avail_in = (unsigned int) length;
 
         int err;
         do {
-            inflationStream.next_out = (Bytef *) zlibBuffer;
+            inflationStream.next_out = reinterpret_cast<Bytef *>(zlibBuffer);
             inflationStream.avail_out = LARGE_BUFFER_SIZE;
             err = ::inflate(&inflationStream, Z_FINISH);
             if (!inflationStream.avail_in) {
@@ -79,7 +79,7 @@ namespace eioWS {
             dynamicZlibBuffer.append(zlibBuffer, LARGE_BUFFER_SIZE - inflationStream.avail_out);
 
             length = dynamicZlibBuffer.length();
-            return (char *) dynamicZlibBuffer.data();
+            return reinterpret_cast<char *>(dynamicZlibBuffer.data());
         }
 
         length = LARGE_BUFFER_SIZE - inflationStream.avail_out;

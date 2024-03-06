@@ -6,10 +6,11 @@
 #define SOCKET_ERROR -1
 #define INVALID_SOCKET -1
 
+#include <unistd.h>
 #include <mutex>
+#include <vector>
 #include <algorithm>
 #include "Libuv.h"
-#include <unistd.h>
 
 namespace uS {
     // todo: mark sockets nonblocking in these functions
@@ -49,7 +50,7 @@ namespace uS {
         static void asyncCallback(Async *async);
 
         static int getMemoryBlockIndex(size_t length) {
-            return (int) ((length >> 4) + bool(length & 15));
+            return static_cast<int>((length >> 4) + static_cast<bool>(length & 15));
         }
 
         char *getSmallMemoryBlock(int index) {
