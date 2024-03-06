@@ -1,5 +1,4 @@
 #include "Group.h"
-#include "Hub.h"
 
 namespace eioWS {
     void Group::setUserData(void *user) {

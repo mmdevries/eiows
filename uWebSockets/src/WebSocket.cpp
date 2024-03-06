@@ -1,5 +1,4 @@
 #include "WebSocket.h"
-#include "Group.h"
 #include "Hub.h"
 
 namespace eioWS {

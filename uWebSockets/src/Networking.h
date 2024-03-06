@@ -3,37 +3,13 @@
 #ifndef NETWORKING_UWS_H
 #define NETWORKING_UWS_H
 
-#ifndef __linux
-#define MSG_NOSIGNAL 0
-#else
-#include <endian.h>
-#endif
-
-#ifdef __APPLE__
-#include <libkern/OSByteOrder.h>
-#define htobe64(x) OSSwapHostToBigInt64(x)
-#define be64toh(x) OSSwapBigToHostInt64(x)
-#endif
-
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/tcp.h>
-#include <netdb.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <cstring>
 #define SOCKET_ERROR -1
 #define INVALID_SOCKET -1
 
-#include "Libuv.h"
-#include <openssl/ssl.h>
-#include <openssl/err.h>
-#include <csignal>
-#include <vector>
-#include <string>
 #include <mutex>
 #include <algorithm>
-#include <memory>
+#include "Libuv.h"
+#include <unistd.h>
 
 namespace uS {
     // todo: mark sockets nonblocking in these functions

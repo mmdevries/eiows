@@ -1,7 +1,7 @@
 #ifndef NODE_UWS_H
 #define NODE_UWS_H
 
-#include "Socket.h"
+#include "Networking.h"
 #include <vector>
 #include <mutex>
 

@@ -1,7 +1,10 @@
 #ifndef SOCKET_UWS_H
 #define SOCKET_UWS_H
 
+#include <openssl/ssl.h>
+#include <openssl/err.h>
 #include "Networking.h"
+#include "Libuv.h"
 
 namespace uS {
     // perfectly 64 bytes (4 + 60)

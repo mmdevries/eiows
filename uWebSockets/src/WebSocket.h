@@ -4,7 +4,6 @@
 #include "WebSocketProtocol.h"
 #include "Socket.h"
 
-
 namespace eioWS {
     struct Group;
 
