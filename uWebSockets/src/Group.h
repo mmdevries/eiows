@@ -4,6 +4,7 @@
 #include "WebSocket.h"
 #include "Extensions.h"
 #include <stack>
+#include <functional>
 
 namespace eioWS {
     struct Hub;
