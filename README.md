@@ -16,7 +16,7 @@ Examples:
     // ESM
     import * as http from 'http';
     import { Server } from "socket.io";
-    import { eiows } from 'eiows';
+    import eiows from 'eiows';
 
     let server = http.createServer();
 
