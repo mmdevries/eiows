@@ -5,6 +5,7 @@
   "license": "MIT",
   "main": "./dist/eiows.js",
   "types": "./dist/eiows.d.ts",
+  "os": ["!win32", "linux", "freebsd", "darwin"],
   "exports": {
     ".": {
       "import": "./dist/wrapper.mjs",
