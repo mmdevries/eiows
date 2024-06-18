@@ -1,2 +1,2 @@
 import eiows from './eiows.js'; 
-export { eiows };
+export default eiows;
