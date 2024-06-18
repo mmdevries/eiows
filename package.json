@@ -8,7 +8,8 @@
   "exports": {
     ".": {
       "import": "./dist/wrapper.mjs",
-      "require": "./dist/eiows.js"
+      "require": "./dist/eiows.js",
+      "types": "./dist/eiows.d.ts"
     },
     "./package.json": "./package.json"
   },
