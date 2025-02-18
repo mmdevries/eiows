@@ -81,11 +81,14 @@ class WebSocket {
                 options = null;
             }
 
-            const binary = options && typeof options.binary === 'boolean' ? options.binary : typeof message !== 'string';
+            const opts = {
+                binary: options && options.binary ? options.binary : typeof message !== 'string',
+                compress: options && options.compress ? options.compress : true,
+            };
 
-            native.server.send(this.external, message, binary ? eiows.OPCODE_BINARY : eiows.OPCODE_TEXT, cb ? (() => {
+            native.server.send(this.external, message, opts.binary ? eiows.OPCODE_BINARY : eiows.OPCODE_TEXT, cb ? (() => {
                 process.nextTick(cb);
-            }) : undefined, options && options.compress);
+            }) : undefined, opts.compress);
         } else if (cb) {
             cb(new Error('not opened'));
         }
