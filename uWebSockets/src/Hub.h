@@ -26,8 +26,8 @@ namespace eioWS {
             static const int LARGE_BUFFER_SIZE = 300 * 1024;
 
         public:
-            Group *createGroup(int extensionOptions = 0, unsigned int maxPayload = 16777216) {
-                return new Group(extensionOptions, maxPayload, this, nodeData);
+            Group *createGroup(int extensionOptions = 0, unsigned int compressThreshold = 0, unsigned int maxPayload = 16777216) {
+                return new Group(extensionOptions, compressThreshold, maxPayload, this, nodeData);
             }
 
             Group &getDefaultGroup() {
@@ -38,7 +38,7 @@ namespace eioWS {
 
             Hub(int extensionOptions = 0, unsigned int maxPayload = 16777216) :
                 uS::Node(LARGE_BUFFER_SIZE, WebSocketProtocol<WebSocket>::CONSUME_PRE_PADDING, WebSocketProtocol<WebSocket>::CONSUME_POST_PADDING),
-                Group(extensionOptions, maxPayload, this, nodeData) {
+                Group(extensionOptions, compressThreshold, maxPayload, this, nodeData) {
                     inflateInit2(&inflationStream, -15);
                     zlibBuffer = new char[LARGE_BUFFER_SIZE];
                     allocateDefaultCompressor(&deflationStream);

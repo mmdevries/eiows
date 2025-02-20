@@ -100,7 +100,7 @@ struct GroupData {
 };
 
 void createGroup(const FunctionCallbackInfo<Value> &args) {
-    eioWS::Group *group = hub.createGroup(args[0].As<Integer>()->Value(), args[1].As<Integer>()->Value());
+    eioWS::Group *group = hub.createGroup(args[0].As<Integer>()->Value(), args[1].As<Integer>()->Value(), args[2].As<Integer>()->Value());
     group->setUserData(new GroupData);
     args.GetReturnValue().Set(External::New(args.GetIsolate(), group));
 }
@@ -181,6 +181,7 @@ void sendCallback(eioWS::WebSocket *webSocket, void *data, bool cancelled, void 
 }
 
 void send(const FunctionCallbackInfo<Value> &args) {
+    eioWS::Group *group = (eioWS::Group *)args[0].As<External>()->Value();
     eioWS::OpCode opCode = (eioWS::OpCode)args[2].As<Integer>()->Value();
     NativeString nativeString(args.GetIsolate(), args[1]);
 
@@ -194,7 +195,7 @@ void send(const FunctionCallbackInfo<Value> &args) {
         sc->isolate = args.GetIsolate();
     }
 
-    bool compress = args[4].As<Boolean>()->Value();
+    bool compress = group->need2Compress(nativeString.getLength());
     unwrapSocket(args[0].As<External>())->send(nativeString.getData(), nativeString.getLength(), opCode, callback, sc, compress);
 }
 

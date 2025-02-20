@@ -74,18 +74,15 @@ class WebSocket {
         return this;
     }
 
-    send(message, options, cb) {
+    send(message, options, cb) { // options will be ignored
         if (this.external) {
+            const binary = (typeof message !== 'string');
             if (typeof options === 'function') {
                 cb = options;
-                options = null;
             }
-
-            const binary = options && typeof options.binary === 'boolean' ? options.binary : typeof message !== 'string';
-
             native.server.send(this.external, message, binary ? eiows.OPCODE_BINARY : eiows.OPCODE_TEXT, cb ? (() => {
                 process.nextTick(cb);
-            }) : undefined, options && options.compress);
+            }) : undefined);
         } else if (cb) {
             cb(new Error('not opened'));
         }
@@ -106,15 +103,18 @@ class Server {
         }
 
         var nativeOptions = 0;
+        var compressThreshold = 0;
         if (options.perMessageDeflate !== undefined && options.perMessageDeflate !== false) {
             nativeOptions |= eiows.PERMESSAGE_DEFLATE;
-
+            if (!isNaN(options.perMessageDeflate.threshold)) {
+                compressThreshold = Math.max(compressThreshold, options.perMessageDeflate.threshold);
+            }
             if (options.perMessageDeflate.serverNoContextTakeover === false) {
                 nativeOptions |= eiows.SLIDING_DEFLATE_WINDOW;
             }
         }
 
-        this.serverGroup = native.server.group.create(nativeOptions, options.maxPayload === undefined ? DEFAULT_PAYLOAD_LIMIT : options.maxPayload);
+        this.serverGroup = native.server.group.create(nativeOptions, compressThreshold, options.maxPayload === undefined ? DEFAULT_PAYLOAD_LIMIT : options.maxPayload);
 
         this._upgradeCallback = noop;
         this._noDelay = options.noDelay === undefined ? true : options.noDelay;
