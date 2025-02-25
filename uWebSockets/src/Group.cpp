@@ -9,10 +9,6 @@ namespace eioWS {
         return userData;
     }
 
-    bool Group::need2Compress(unsigned int length) {
-        return ((extensionOptions | Options::PERMESSAGE_DEFLATE) && (length > compressThreshold));
-    }
-
     void Group::addWebSocket(WebSocket *webSocket) {
         if (webSocketHead) {
             webSocketHead->prev = webSocket;
@@ -42,9 +38,8 @@ namespace eioWS {
         }
     }
 
-    Group::Group(int extensionOptions, unsigned int compressThreshold, unsigned int maxPayload, Hub *hub, uS::NodeData *nodeData) :
+    Group::Group(int extensionOptions, unsigned int maxPayload, Hub *hub, uS::NodeData *nodeData) :
         uS::NodeData(*nodeData),
-        compressThreshold(compressThreshold),
         maxPayload(maxPayload),
         hub(hub),
         extensionOptions(extensionOptions) {

@@ -4,8 +4,11 @@
 'use strict';
 const EE_ERROR = 'Registering more than one listener to a WebSocket is not supported.';
 const DEFAULT_PAYLOAD_LIMIT = 16777216;
+const FastBuffer = Buffer[Symbol.species];
 
 var eiows = {};
+eiows.compressBo = false;
+eiows.compressThreshold = 1024;
 eiows.PERMESSAGE_DEFLATE = 1;
 eiows.SLIDING_DEFLATE_WINDOW = 16;
 eiows.OPCODE_TEXT = 1;
@@ -13,6 +16,19 @@ eiows.OPCODE_BINARY = 2;
 eiows.OPCODE_PING = 9;
 eiows.OPEN = 1;
 eiows.CLOSED = 0;
+
+function toBuffer(data) {
+  if (Buffer.isBuffer(data)) return data;
+  let buf;
+  if (data instanceof ArrayBuffer) {
+    buf = new FastBuffer(data);
+  } else if (ArrayBuffer.isView(data)) {
+    buf = new FastBuffer(data.buffer, data.byteOffset, data.byteLength);
+  } else {
+    buf = Buffer.from(data);
+  }
+  return buf;
+}
 
 function noop() {}
 
@@ -77,12 +93,24 @@ class WebSocket {
     send(message, options, cb) { // options will be ignored
         if (this.external) {
             const binary = (typeof message !== 'string');
+            var compress = false;
+            if (eiows.compressBo) {
+                var byteLength;
+                if (!binary) {
+                    byteLength = Buffer.byteLength(message);
+                } else {
+                    byteLength = toBuffer(message).length;
+                }
+                if (byteLength >= eiows.compressThreshold) {
+                    compress = true;
+                }
+            }
             if (typeof options === 'function') {
                 cb = options;
             }
             native.server.send(this.external, message, binary ? eiows.OPCODE_BINARY : eiows.OPCODE_TEXT, cb ? (() => {
                 process.nextTick(cb);
-            }) : undefined);
+            }) : undefined, compress);
         } else if (cb) {
             cb(new Error('not opened'));
         }
@@ -103,18 +131,18 @@ class Server {
         }
 
         var nativeOptions = 0;
-        var compressThreshold = 0;
         if (options.perMessageDeflate !== undefined && options.perMessageDeflate !== false) {
             nativeOptions |= eiows.PERMESSAGE_DEFLATE;
-            if (!isNaN(options.perMessageDeflate.threshold)) {
-                compressThreshold = Math.max(compressThreshold, options.perMessageDeflate.threshold);
+            eiows.compressBo = true;
+            if (!isNaN(options.perMessageDeflate.threshold) && options.perMessageDeflate.threshold >= 0) {
+                eiows.compressThreshold = options.perMessageDeflate.threshold;
             }
             if (options.perMessageDeflate.serverNoContextTakeover === false) {
                 nativeOptions |= eiows.SLIDING_DEFLATE_WINDOW;
             }
         }
 
-        this.serverGroup = native.server.group.create(nativeOptions, compressThreshold, options.maxPayload === undefined ? DEFAULT_PAYLOAD_LIMIT : options.maxPayload);
+        this.serverGroup = native.server.group.create(nativeOptions, options.maxPayload === undefined ? DEFAULT_PAYLOAD_LIMIT : options.maxPayload);
 
         this._upgradeCallback = noop;
         this._noDelay = options.noDelay === undefined ? true : options.noDelay;
