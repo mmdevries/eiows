@@ -38,7 +38,7 @@ namespace uS {
         Loop *loop;
         uS::Context *netContext;
         void *user = nullptr;
-        static const int preAllocMaxSize = 1024;
+        static const int preAllocMaxSize = 8192;
         char **preAlloc;
 
         Async *async = nullptr;
