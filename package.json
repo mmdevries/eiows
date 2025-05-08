@@ -1,6 +1,6 @@
 {
   "name": "eiows",
-  "version": "8.1.1",
+  "version": "8.2.0",
   "description": "custom fork of uWebSockets 0.14",
   "license": "MIT",
   "main": "./dist/eiows.js",
@@ -20,7 +20,7 @@
     "postinstall": "make clean"
   },
   "engines": {
-    "node": ">=16 <23.0"
+    "node": ">=16 <25.0"
   },
   "keywords": [
     "websocket",
