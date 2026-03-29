@@ -5,6 +5,7 @@
             'variables': {
                 'node_version': '<!(node -e "console.log(process.versions.node.split(\'.\')[0])")'
             },
+            "defines": [ "HAVE_AMARO=0" ],
             "include_dirs": [
                 'nodejs/src/node/src',
                 'nodejs/src/node/deps/v8/include'
