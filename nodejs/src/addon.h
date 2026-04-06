@@ -255,9 +255,12 @@ void sendCallback(eioWS::WebSocket *, void *data, bool cancelled, void *) {
     Local<Context> context = sc->isolate->GetCurrentContext();
     Local<Object> process = Local<Object>::New(sc->isolate, processObject);
     Local<Function> nextTick = Local<Function>::New(sc->isolate, processNextTick);
+    Local<Value> error = cancelled ?
+        Exception::Error(String::NewFromUtf8Literal(sc->isolate, "send cancelled")).As<Value>() :
+        Undefined(sc->isolate).As<Value>();
     Local<Value> argv[] = {
         Local<Function>::New(sc->isolate, sc->jsCallback),
-        cancelled ? Exception::Error(String::NewFromUtf8Literal(sc->isolate, "send cancelled")) : Undefined(sc->isolate)
+        error
     };
     nextTick->Call(context, process, cancelled ? 2 : 1, argv);
     scheduleTick();
