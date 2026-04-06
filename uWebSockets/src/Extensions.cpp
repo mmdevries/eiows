@@ -3,35 +3,24 @@
 namespace eioWS {
 
     enum ExtensionTokens {
-        TOK_PERMESSAGE_DEFLATE = 1838,
-        TOK_SERVER_NO_CONTEXT_TAKEOVER = 2807,
-        TOK_CLIENT_NO_CONTEXT_TAKEOVER = 2783,
-        TOK_SERVER_MAX_WINDOW_BITS = 2372,
-        TOK_CLIENT_MAX_WINDOW_BITS = 2348
+        TOK_PERMESSAGE_DEFLATE = 1838
     };
 
     class ExtensionsParser {
-        private:
-            int *lastInteger = nullptr;
-
         public:
             bool perMessageDeflate = false;
-            bool serverNoContextTakeover = false;
-            bool clientNoContextTakeover = false;
-            int serverMaxWindowBits = 0;
-            int clientMaxWindowBits = 0;
 
             static int getToken(const char *&in, const char *stop);
             ExtensionsParser(const char *data, size_t length);
     };
 
     int ExtensionsParser::getToken(const char *&in, const char *stop) {
-        while (!isalnum(*in) && in != stop) {
+        while (in != stop && !isalnum(*in)) {
             in++;
         }
 
         int hashedToken = 0;
-        while (isalnum(*in) || *in == '-' || *in == '_') {
+        while (in != stop && (isalnum(*in) || *in == '-' || *in == '_')) {
             if (isdigit(*in)) {
                 hashedToken = hashedToken * 10 - (*in - '0');
             } else {
@@ -48,31 +37,6 @@ namespace eioWS {
         for (; token && token != TOK_PERMESSAGE_DEFLATE; token = getToken(data, stop));
 
         perMessageDeflate = (token == TOK_PERMESSAGE_DEFLATE);
-        while ((token = getToken(data, stop))) {
-            switch (token) {
-                case TOK_PERMESSAGE_DEFLATE:
-                    return;
-                case TOK_SERVER_NO_CONTEXT_TAKEOVER:
-                    serverNoContextTakeover = true;
-                    break;
-                case TOK_CLIENT_NO_CONTEXT_TAKEOVER:
-                    clientNoContextTakeover = true;
-                    break;
-                case TOK_SERVER_MAX_WINDOW_BITS:
-                    serverMaxWindowBits = 1;
-                    lastInteger = &serverMaxWindowBits;
-                    break;
-                case TOK_CLIENT_MAX_WINDOW_BITS:
-                    clientMaxWindowBits = 1;
-                    lastInteger = &clientMaxWindowBits;
-                    break;
-                default:
-                    if (token < 0 && lastInteger) {
-                        *lastInteger = -token;
-                    }
-                    break;
-            }
-        }
     }
 
     ExtensionsNegotiator::ExtensionsNegotiator(int wantedOptions) {
@@ -87,15 +51,8 @@ namespace eioWS {
             if (options & Options::CLIENT_NO_CONTEXT_TAKEOVER) {
                 extensionsOffer += "; client_no_context_takeover";
             }
-            // we do not support accepting this yet
-            // todo: if we agree on this, do not allocate a compressor
-            // per socket!
-
-            // It is RECOMMENDED that a server supports the
-            // "server_no_context_takeover" extension parameter in an extension
-            // negotiation offer.
             if (options & Options::SERVER_NO_CONTEXT_TAKEOVER) {
-                //extensionsOffer += "; server_no_context_takeover";
+                extensionsOffer += "; server_no_context_takeover";
             }
         }
         return extensionsOffer;
@@ -103,17 +60,9 @@ namespace eioWS {
 
     void ExtensionsNegotiator::readOffer(std::string offer) {
         ExtensionsParser extensionsParser(offer.data(), offer.length());
-        if ((options & PERMESSAGE_DEFLATE) && extensionsParser.perMessageDeflate) {
-            if (extensionsParser.clientNoContextTakeover || (options & CLIENT_NO_CONTEXT_TAKEOVER)) {
-                options |= CLIENT_NO_CONTEXT_TAKEOVER;
-            }
-            if (extensionsParser.serverNoContextTakeover) {
-                options |= SERVER_NO_CONTEXT_TAKEOVER;
-            } else {
-                options &= ~SERVER_NO_CONTEXT_TAKEOVER;
-            }
-        } else {
+        if (!((options & PERMESSAGE_DEFLATE) && extensionsParser.perMessageDeflate)) {
             options &= ~PERMESSAGE_DEFLATE;
+            options &= ~(CLIENT_NO_CONTEXT_TAKEOVER | SERVER_NO_CONTEXT_TAKEOVER | SLIDING_DEFLATE_WINDOW);
         }
     }
 

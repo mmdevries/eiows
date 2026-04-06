@@ -1,15 +1,25 @@
 #include "Group.h"
 
 namespace eioWS {
-    void Group::setUserData(void *user) {
+    void Group::setUserData(void *user, void (*deleter)(void *)) {
         this->userData = user;
+        this->userDataDeleter = deleter;
     }
 
     void *Group::getUserData() {
         return userData;
     }
 
+    void Group::destroy() {
+        if (userData && userDataDeleter) {
+            userDataDeleter(userData);
+            userData = nullptr;
+        }
+        delete this;
+    }
+
     void Group::addWebSocket(WebSocket *webSocket) {
+        liveWebSockets++;
         if (webSocketHead) {
             webSocketHead->prev = webSocket;
             webSocket->next = webSocketHead;
@@ -38,12 +48,12 @@ namespace eioWS {
         }
     }
 
-    Group::Group(int extensionOptions, unsigned int maxPayload, Hub *hub, uS::NodeData *nodeData) :
+    Group::Group(int extensionOptions, unsigned int maxPayload, Hub *hub, uS::NodeData *nodeData, bool owned) :
         uS::NodeData(*nodeData),
         maxPayload(maxPayload),
         hub(hub),
-        extensionOptions(extensionOptions) {
-            this->extensionOptions |= CLIENT_NO_CONTEXT_TAKEOVER | SERVER_NO_CONTEXT_TAKEOVER;
+        extensionOptions(extensionOptions),
+        owned(owned) {
         }
 
     void Group::onConnection(const std::function<void (WebSocket *)> &handler) {
@@ -58,9 +68,35 @@ namespace eioWS {
         disconnectionHandler = handler;
     }
 
+    void Group::markForDeletion() {
+        deleteOnDrain = true;
+        if (owned && !liveWebSockets) {
+            destroy();
+        }
+    }
+
+    void Group::onSocketClosed() {
+        if (liveWebSockets) {
+            liveWebSockets--;
+        }
+        if (owned && deleteOnDrain && !liveWebSockets) {
+            destroy();
+        }
+    }
+
     void Group::close(int code, char *message, size_t length) {
-        forEach([code, message, length](eioWS::WebSocket *ws) {
+        uS::Poll *iterator = webSocketHead;
+        iterators.push(iterator);
+        while (iterator) {
+            uS::Poll *lastIterator = iterator;
+            eioWS::WebSocket *ws = static_cast<eioWS::WebSocket *>(iterator);
             ws->close(code, message, length);
-        });
+            iterator = iterators.top();
+            if (lastIterator == iterator) {
+                iterator = static_cast<uS::Socket *>(iterator)->next;
+                iterators.top() = iterator;
+            }
+        }
+        iterators.pop();
     }
 }

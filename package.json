@@ -1,7 +1,7 @@
 {
   "name": "eiows",
-  "version": "8.2.1",
-  "description": "custom fork of uWebSockets 0.14",
+  "version": "9.0.0",
+  "description": "high-performance Node.js WebSocket engine for Socket.IO",
   "license": "MIT",
   "main": "./dist/eiows.js",
   "types": "./dist/eiows.d.ts",
@@ -16,7 +16,7 @@
   },
   "scripts": {
     "preinstall": "make",
-    "install": "node-gyp rebuild > build_log.txt 2>&1 || exit 0",
+    "install": "node-gyp rebuild > build_log.txt 2>&1",
     "postinstall": "make clean"
   },
   "engines": {
@@ -26,8 +26,7 @@
     "websocket",
     "engine.io",
     "socket.io",
-    "eiows",
-    "uws"
+    "eiows"
   ],
   "repository": {
     "type": "git",

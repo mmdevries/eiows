@@ -1,43 +1,13 @@
-#ifndef LIBUV_H
-#define LIBUV_H
+#ifndef LIBUV_EIOWS_H
+#define LIBUV_EIOWS_H
 
 #include <uv.h>
-static_assert (UV_VERSION_MINOR >= 3, "µWebSockets requires libuv >=1.3.0");
+static_assert (UV_VERSION_MINOR >= 3, "EIOWS requires libuv >=1.3.0");
 
 namespace uS {
     struct Loop : uv_loop_t {
         static Loop *createLoop() {
             return static_cast<Loop *>(uv_default_loop());
-        }
-    };
-
-    struct Async {
-        uv_async_t uv_async;
-
-        Async(Loop *loop) {
-            uv_async.loop = loop;
-        }
-
-        void start(void (*cb)(Async *)) {
-            uv_async_init(uv_async.loop, &uv_async, (uv_async_cb) cb);
-        }
-
-        void send() {
-            uv_async_send(&uv_async);
-        }
-
-        void close() {
-            uv_close(reinterpret_cast<uv_handle_t *>(&uv_async), [](uv_handle_t *a) {
-                delete reinterpret_cast<Async *>(a);
-            });
-        }
-
-        void setData(void *data) {
-            uv_async.data = data;
-        }
-
-        void *getData() {
-            return uv_async.data;
         }
     };
 
@@ -75,18 +45,21 @@ namespace uS {
 
     struct Poll {
         uv_poll_t *uv_poll;
-        void (*cb)(Poll *p, int status, int events);
+        void (*cb)(Poll *p, int status, int events) = nullptr;
+        void (*closeCb)(Poll *p) = nullptr;
 
         Poll(Loop *loop, uv_os_sock_t fd) {
             uv_poll = new uv_poll_t;
             uv_poll_init_socket(loop, uv_poll, fd);
-            cb = nullptr;
         }
 
         Poll(Poll &&other) {
             uv_poll = other.uv_poll;
             cb = other.cb;
+            closeCb = other.closeCb;
             other.uv_poll = nullptr;
+            other.cb = nullptr;
+            other.closeCb = nullptr;
         }
 
         Poll(const Poll &other) = delete;
@@ -107,10 +80,6 @@ namespace uS {
             this->cb = cb;
         }
 
-        void (*getCb())(Poll *, int, int) {
-            return cb;
-        }
-
         void start(Poll *self, int events) {
             uv_poll->data = self;
             uv_poll_start(uv_poll, events, [](uv_poll_t *p, int status, int events) {
@@ -127,15 +96,15 @@ namespace uS {
             uv_poll_stop(uv_poll);
         }
 
-        void close(void (*cb)(Poll *)) {
-            this->cb = (void(*)(Poll *, int, int)) cb;
+        void close(Poll *self, void (*cb)(Poll *)) {
+            closeCb = cb;
+            uv_poll->data = self;
             uv_close(reinterpret_cast<uv_handle_t *>(uv_poll), [](uv_handle_t *p) {
                 Poll *poll = static_cast<Poll *>(p->data);
-                void (*cb)(Poll *) = (void(*)(Poll *)) poll->cb;
-                cb(poll);
+                poll->closeCb(poll);
             });
         }
     };
 }
 
-#endif // LIBUV_H
+#endif // LIBUV_EIOWS_H

@@ -1,15 +1,13 @@
 // the purpose of this header should be to provide SSL and networking wrapped in a common interface
 // it should allow cross-platform networking and SSL and also easy usage of mTCP and similar tech
-#ifndef NETWORKING_UWS_H
-#define NETWORKING_UWS_H
+#ifndef NETWORKING_EIOWS_H
+#define NETWORKING_EIOWS_H
 
 #define SOCKET_ERROR -1
 #define INVALID_SOCKET -1
 
+#include <cerrno>
 #include <unistd.h>
-#include <mutex>
-#include <vector>
-#include <algorithm>
 #include "Libuv.h"
 
 namespace uS {
@@ -37,17 +35,8 @@ namespace uS {
         int recvLength;
         Loop *loop;
         uS::Context *netContext;
-        void *user = nullptr;
         static const int preAllocMaxSize = 8192;
         char **preAlloc;
-
-        Async *async = nullptr;
-        pthread_t tid;
-
-        std::recursive_mutex *asyncMutex;
-        std::vector<Poll *> transferQueue;
-        std::vector<Poll *> changePollQueue;
-        static void asyncCallback(Async *async);
 
         static int getMemoryBlockIndex(size_t length) {
             return static_cast<int>((length >> 4) + static_cast<bool>(length & 15));
@@ -70,17 +59,7 @@ namespace uS {
                 delete [] memory;
             }
         }
-
-        public:
-        void clearPendingPollChanges(Poll *p) {
-            asyncMutex->lock();
-            changePollQueue.erase(
-                std::remove(changePollQueue.begin(), changePollQueue.end(), p),
-                changePollQueue.end()
-            );
-            asyncMutex->unlock();
-        }
     };
 }
 
-#endif // NETWORKING_UWS_H
+#endif // NETWORKING_EIOWS_H

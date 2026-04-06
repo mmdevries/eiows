@@ -11,8 +11,10 @@ void Main(Local<Object> exports)
     NODE_SET_METHOD(exports, "getAddress", getAddress);
     NODE_SET_METHOD(exports, "transfer", transfer);
     NODE_SET_METHOD(exports, "upgrade", upgrade);
+    NODE_SET_METHOD(exports, "destroyTicket", destroyTicket);
     NODE_SET_METHOD(exports, "setNoop", setNoop);
     registerCheck(isolate);
+    node::AddEnvironmentCleanupHook(isolate, cleanupAddon, nullptr);
 }
 
 NODE_MODULE(eiows, Main)

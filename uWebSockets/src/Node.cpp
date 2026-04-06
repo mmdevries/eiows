@@ -6,15 +6,11 @@ namespace uS {
         nodeData->recvBufferMemoryBlock = new char[recvLength];
         nodeData->recvBuffer = nodeData->recvBufferMemoryBlock + prePadding;
         nodeData->recvLength = recvLength - prePadding - postPadding;
-
-        nodeData->tid = pthread_self();
         loop = Loop::createLoop();
 
         // each node has a context
         nodeData->netContext = new Context();
         nodeData->loop = loop;
-
-        nodeData->asyncMutex = &asyncMutex;
 
         int indices = NodeData::getMemoryBlockIndex(NodeData::preAllocMaxSize) + 1;
         nodeData->preAlloc = new char*[indices];

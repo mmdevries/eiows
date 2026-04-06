@@ -3,6 +3,12 @@
 #include <string>
 
 namespace eioWS {
+    static inline void trimLargeStringBuffer(std::string &buffer, size_t retainedLimit) {
+        if (buffer.capacity() > retainedLimit && buffer.empty()) {
+            std::string().swap(buffer);
+        }
+    }
+
     z_stream *Hub::allocateDefaultCompressor(z_stream *zStream) {
         deflateInit2(zStream, 1, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY);
         return zStream;
@@ -10,6 +16,7 @@ namespace eioWS {
 
     char *Hub::deflate(char *data, size_t &length, z_stream *slidingDeflateWindow) {
         dynamicZlibBuffer.clear();
+        trimLargeStringBuffer(dynamicZlibBuffer, RETAINED_BUFFER_LIMIT);
 
         z_stream *compressor = slidingDeflateWindow ? slidingDeflateWindow : &deflationStream;
 
@@ -52,6 +59,7 @@ namespace eioWS {
     // todo: let's go through this code once more some time!
     char *Hub::inflate(char *data, size_t &length, size_t maxPayload) {
         dynamicZlibBuffer.clear();
+        trimLargeStringBuffer(dynamicZlibBuffer, RETAINED_BUFFER_LIMIT);
 
         inflationStream.next_in = reinterpret_cast<Bytef *>(data);
         inflationStream.avail_in = (unsigned int) length;
@@ -105,7 +113,7 @@ namespace eioWS {
         WebSocket *webSocket = new WebSocket(serverGroup->maxPayload, perMessageDeflate, &s);
         webSocket->upgrade(secKey, extensionsResponse, subprotocol, subprotocolLength);
 
-        webSocket->setState<WebSocket>();
+        webSocket->setState();
         webSocket->change(webSocket, webSocket->setPoll(UV_READABLE));
         serverGroup->addWebSocket(webSocket);
         serverGroup->connectionHandler(webSocket);

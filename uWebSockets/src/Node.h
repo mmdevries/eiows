@@ -1,16 +1,13 @@
-#ifndef NODE_UWS_H
-#define NODE_UWS_H
+#ifndef NODE_EIOWS_H
+#define NODE_EIOWS_H
 
 #include "Networking.h"
-#include <vector>
-#include <mutex>
 
 namespace uS {
     class Node {
         protected:
             Loop *loop;
             NodeData *nodeData;
-            std::recursive_mutex asyncMutex;
 
         public:
             Node(int recvLength = 1024, int prePadding = 0, int postPadding = 0);
@@ -22,4 +19,4 @@ namespace uS {
     };
 }
 
-#endif // NODE_UWS_H
+#endif // NODE_EIOWS_H

@@ -5,6 +5,21 @@
 #include <string>
 
 namespace eioWS {
+    static const size_t FRAGMENT_BUFFER_RETAIN_LIMIT = 1024 * 1024;
+
+    static inline void trimFragmentBuffer(std::string &buffer) {
+        if (buffer.empty() && buffer.capacity() > FRAGMENT_BUFFER_RETAIN_LIMIT) {
+            std::string().swap(buffer);
+        }
+    }
+
+    const WebSocketProtocolHooks WebSocket::protocolHooks = {
+        WebSocket::refusePayloadLength,
+        WebSocket::setCompressed,
+        WebSocket::forceClose,
+        WebSocket::handleFragment
+    };
+
     WebSocket::WebSocket(unsigned int maxP, bool perMessageDeflate, uS::Socket *socket) :
         uS::Socket(std::move(*socket)) {
         maxPayload = maxP;
@@ -16,6 +31,20 @@ namespace eioWS {
         }
     }
 
+    size_t WebSocket::transformMessage(const char *src, char *dst, size_t length, void *transformData) {
+        TransformData *data = static_cast<TransformData *>(transformData);
+        if (data->compress) {
+            char *deflated = Group::from(data->webSocket)->hub->deflate(const_cast<char *>(src), length, reinterpret_cast<z_stream *>(data->webSocket->slidingDeflateWindow));
+            return WebSocketProtocol::formatMessage(dst, deflated, length, data->opCode, length, true);
+        }
+
+        return WebSocketProtocol::formatMessage(dst, src, length, data->opCode, length, false);
+    }
+
+    void WebSocket::deleteSocket(uS::Poll *p) {
+        delete static_cast<WebSocket *>(p);
+    }
+
     /*
      * Frames and sends a WebSocket message.
      *
@@ -24,31 +53,14 @@ namespace eioWS {
      *
      */
     void WebSocket::send(const char *message, size_t length, OpCode opCode, void(*callback)(WebSocket *webSocket, void *data, bool cancelled, void *reserved), void *callbackData, bool compress) {
-        struct TransformData {
-            OpCode opCode;
-            bool compress;
-            WebSocket *s;
-        } transformData = {opCode, compress && compressionStatus == WebSocket::CompressionStatus::ENABLED && opCode < 3, this};
-
-        struct WebSocketTransformer {
-            static size_t transform(const char *src, char *dst, size_t length, TransformData transformData) {
-                if (transformData.compress) {
-                    char *deflated = Group::from(transformData.s)->hub->deflate(const_cast<char *>(src), length, reinterpret_cast<z_stream *>(transformData.s->slidingDeflateWindow));
-                    return WebSocketProtocol<WebSocket>::formatMessage(dst, deflated, length, transformData.opCode, length, true);
-                }
-                return WebSocketProtocol<WebSocket>::formatMessage(dst, src, length, transformData.opCode, length, false);
-            }
-        };
-
-        sendTransformed<WebSocketTransformer>(const_cast<char *>(message), length, (void(*)(void *, void *, bool, void *)) callback, callbackData, transformData);
+        TransformData transformData = {opCode, compress && compressionStatus == WebSocket::CompressionStatus::ENABLED && opCode < 3, this};
+        sendTransformed(message, length, transformMessage, &transformData, (void(*)(void *, void *, bool, void *)) callback, callbackData);
     }
 
     uS::Socket *WebSocket::onData(uS::Socket *s, char *data, size_t length) {
         WebSocket *webSocket = static_cast<WebSocket *>(s);
-
-        webSocket->hasOutstandingPong = false;
         if (!webSocket->isShuttingDown()) {
-            WebSocketProtocol<WebSocket>::consume(data, (unsigned int) length, webSocket);
+            WebSocketProtocol::consume(data, (unsigned int) length, webSocket, protocolHooks);
         }
 
         return webSocket;
@@ -84,11 +96,11 @@ namespace eioWS {
         Group::from(this)->disconnectionHandler(this, code, const_cast<char *>(message), length);
 
 
-        startTimeout<WebSocket::onEnd>();
+        startTimeout(WebSocket::onEnd);
 
         char closePayload[MAX_CLOSE_PAYLOAD + 2];
-        int closePayloadLength = static_cast<int>(WebSocketProtocol<WebSocket>::formatClosePayload(closePayload, code, message, length));
-        send(closePayload, closePayloadLength, OpCode::CLOSE, [](WebSocket *p, void *data, bool cancelled, void *reserved) {
+        int closePayloadLength = static_cast<int>(WebSocketProtocol::formatClosePayload(closePayload, code, message, length));
+        send(closePayload, closePayloadLength, OpCode::CLOSE, [](WebSocket *p, void *, bool cancelled, void *) {
             if (!cancelled) {
                 p->shutdown();
             }
@@ -97,24 +109,23 @@ namespace eioWS {
 
     void WebSocket::onEnd(uS::Socket *s) {
         WebSocket *webSocket = static_cast<WebSocket *>(s);
+        Group *group = Group::from(webSocket);
         if (!webSocket->isShuttingDown()) {
-            Group::from(webSocket)->removeWebSocket(webSocket);
-            Group::from(webSocket)->disconnectionHandler(webSocket, 1006, nullptr, 0);
+            group->removeWebSocket(webSocket);
+            group->disconnectionHandler(webSocket, 1006, nullptr, 0);
         } else {
             webSocket->cancelTimeout();
         }
 
-        webSocket->template closeSocket<WebSocket>();
+        webSocket->closeSocket(deleteSocket);
 
         while (!webSocket->messageQueue.empty()) {
             Queue::Message *message = webSocket->messageQueue.front();
             if (message->callback) {
                 message->callback(nullptr, message->callbackData, true, nullptr);
             }
-            webSocket->messageQueue.pop();
+            webSocket->freeMessage(webSocket->messageQueue.pop());
         }
-
-        webSocket->nodeData->clearPendingPollChanges(webSocket);
 
         // remove any per-websocket zlib memory
         if (webSocket->slidingDeflateWindow) {
@@ -123,6 +134,8 @@ namespace eioWS {
             delete reinterpret_cast<z_stream *>(webSocket->slidingDeflateWindow);
             webSocket->slidingDeflateWindow = nullptr;
         }
+
+        group->onSocketClosed();
     }
 
 
@@ -141,7 +154,7 @@ namespace eioWS {
                     }
                 }
 
-                if (opCode == 1 && !WebSocketProtocol<WebSocket>::isValidUtf8((unsigned char *) data, length)) {
+                if (opCode == 1 && !WebSocketProtocol::isValidUtf8((unsigned char *) data, length)) {
                     forceClose(webSocketState);
                     return true;
                 }
@@ -151,6 +164,10 @@ namespace eioWS {
                     return true;
                 }
             } else {
+                size_t requiredCapacity = webSocket->fragmentBuffer.length() + length + remainingBytes + 4;
+                if (webSocket->fragmentBuffer.capacity() < requiredCapacity) {
+                    webSocket->fragmentBuffer.reserve(requiredCapacity);
+                }
                 webSocket->fragmentBuffer.append(data, length);
                 if (!remainingBytes && fin) {
                     length = webSocket->fragmentBuffer.length();
@@ -166,7 +183,7 @@ namespace eioWS {
                         data = reinterpret_cast<char *>(webSocket->fragmentBuffer.data());
                     }
 
-                    if (opCode == 1 && !WebSocketProtocol<WebSocket>::isValidUtf8((unsigned char *) data, length)) {
+                    if (opCode == 1 && !WebSocketProtocol::isValidUtf8((unsigned char *) data, length)) {
                         forceClose(webSocketState);
                         return true;
                     }
@@ -176,12 +193,17 @@ namespace eioWS {
                         return true;
                     }
                     webSocket->fragmentBuffer.clear();
+                    trimFragmentBuffer(webSocket->fragmentBuffer);
                 }
             }
         } else {
             if (!remainingBytes && fin && !webSocket->controlTipLength) {
                 if (opCode == CLOSE) {
-                    typename WebSocketProtocol<WebSocket>::CloseFrame closeFrame = WebSocketProtocol<WebSocket>::parseClosePayload(data, length);
+                    WebSocketProtocol::CloseFrame closeFrame = WebSocketProtocol::parseClosePayload(data, length);
+                    if (closeFrame.code == 1006) {
+                        webSocket->close(1002, nullptr, 0);
+                        return true;
+                    }
                     webSocket->close(closeFrame.code, closeFrame.message, closeFrame.length);
                     return true;
                 } else {
@@ -197,13 +219,21 @@ namespace eioWS {
                     }
                 }
             } else {
+                size_t requiredCapacity = webSocket->fragmentBuffer.length() + length + remainingBytes;
+                if (webSocket->fragmentBuffer.capacity() < requiredCapacity) {
+                    webSocket->fragmentBuffer.reserve(requiredCapacity);
+                }
                 webSocket->fragmentBuffer.append(data, length);
                 webSocket->controlTipLength += length;
 
                 if (!remainingBytes && fin) {
                     char *controlBuffer = reinterpret_cast<char *>(webSocket->fragmentBuffer.data()) + webSocket->fragmentBuffer.length() - webSocket->controlTipLength;
                     if (opCode == CLOSE) {
-                        typename WebSocketProtocol<WebSocket>::CloseFrame closeFrame = WebSocketProtocol<WebSocket>::parseClosePayload(controlBuffer, webSocket->controlTipLength);
+                        WebSocketProtocol::CloseFrame closeFrame = WebSocketProtocol::parseClosePayload(controlBuffer, webSocket->controlTipLength);
+                        if (closeFrame.code == 1006) {
+                            webSocket->close(1002, nullptr, 0);
+                            return true;
+                        }
                         webSocket->close(closeFrame.code, closeFrame.message, closeFrame.length);
                         return true;
                     } else {
@@ -221,6 +251,7 @@ namespace eioWS {
 
                     webSocket->fragmentBuffer.resize(webSocket->fragmentBuffer.length() - webSocket->controlTipLength);
                     webSocket->controlTipLength = 0;
+                    trimFragmentBuffer(webSocket->fragmentBuffer);
                 }
             }
         }

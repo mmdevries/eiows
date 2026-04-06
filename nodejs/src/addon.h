@@ -1,12 +1,29 @@
 #include <node.h>
 #include <node_buffer.h>
-#include <openssl/bio.h>
 #include <openssl/ssl.h>
 #include <uv.h>
-#include <cstring>
+
+#if NODE_MAJOR_VERSION >= 25
+namespace node {
+using StartExecutionCallbackWithModule = StartExecutionCallback;
+}
+#endif
+
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 #define NODE_WANT_INTERNALS 1
 #include "node/src/crypto/crypto_tls.h"
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#elif defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 using BaseObject = node::BaseObject;
 using TLSWrap = node::crypto::TLSWrap;
@@ -25,22 +42,64 @@ class TLSWrapSSLGetter : public TLSWrap {
 };
 #undef NODE_WANT_INTERNALS
 
-using namespace std;
 using namespace v8;
 
 eioWS::Hub hub(0);
 uv_check_t check;
 Persistent<Function> noop;
+Persistent<Object> processObject;
+Persistent<Function> processNextTick;
+bool needsTick = false;
+bool checkInitialized = false;
+
+void scheduleTick() {
+    needsTick = true;
+}
 
 void registerCheck(Isolate *isolate) {
+    Local<Context> context = isolate->GetCurrentContext();
+    Local<Object> process = context->Global()->Get(
+        context,
+        String::NewFromUtf8Literal(isolate, "process")
+    ).ToLocalChecked().As<Object>();
+    processObject.Reset(isolate, process);
+    processNextTick.Reset(
+        isolate,
+        Local<Function>::Cast(
+            process->Get(
+                context,
+                String::NewFromUtf8Literal(isolate, "nextTick")
+            ).ToLocalChecked()
+        )
+    );
+
     uv_check_init((uv_loop_t *)hub.getLoop(), &check);
+    checkInitialized = true;
     check.data = isolate;
     uv_check_start(&check, [](uv_check_t *check) {
+        if (!needsTick) {
+            return;
+        }
+        needsTick = false;
         Isolate *isolate = (Isolate *)check->data;
         HandleScope hs(isolate);
         Local<Function>::New(isolate, noop)->Call(isolate->GetCurrentContext(), Null(isolate), 0, nullptr);
     });
     uv_unref((uv_handle_t *)&check);
+}
+
+void cleanupAddon(void *) {
+    needsTick = false;
+    noop.Reset();
+    processObject.Reset();
+    processNextTick.Reset();
+    if (checkInitialized) {
+        uv_check_stop(&check);
+        if (!uv_is_closing(reinterpret_cast<uv_handle_t *>(&check))) {
+            uv_close(reinterpret_cast<uv_handle_t *>(&check), nullptr);
+        }
+        checkInitialized = false;
+    }
 }
 
 class NativeString {
@@ -96,12 +155,19 @@ class NativeString {
 
 struct GroupData {
     Persistent<Function> connectionHandler, messageHandler, disconnectionHandler;
-    int size = 0;
 };
+
+void destroyGroupData(void *data) {
+    GroupData *groupData = static_cast<GroupData *>(data);
+    groupData->connectionHandler.Reset();
+    groupData->messageHandler.Reset();
+    groupData->disconnectionHandler.Reset();
+    delete groupData;
+}
 
 void createGroup(const FunctionCallbackInfo<Value> &args) {
     eioWS::Group *group = hub.createGroup(args[0].As<Integer>()->Value(), args[1].As<Integer>()->Value());
-    group->setUserData(new GroupData);
+    group->setUserData(new GroupData, destroyGroupData);
     args.GetReturnValue().Set(External::New(args.GetIsolate(), group));
 }
 
@@ -114,6 +180,13 @@ inline eioWS::WebSocket *unwrapSocket(Local<External> external) {
 }
 
 inline Local<Value> wrapMessage(const char *message, size_t length, eioWS::OpCode opCode, Isolate *isolate) {
+    if (!message || !length) {
+        if (opCode == eioWS::OpCode::BINARY) {
+            return node::Buffer::Copy(isolate, "", 0).ToLocalChecked();
+        }
+        return String::Empty(isolate);
+    }
+
     if (opCode == eioWS::OpCode::BINARY) {
         return node::Buffer::Copy(isolate, (char *)message, length).ToLocalChecked();
     } else {
@@ -121,24 +194,30 @@ inline Local<Value> wrapMessage(const char *message, size_t length, eioWS::OpCod
     }
 }
 
-inline Local<Value> getDataV8(eioWS::WebSocket *webSocket, Isolate *isolate) {
-    return webSocket->getUserData() ? Local<Value>::New(isolate, *(Persistent<Value> *)webSocket->getUserData()) : Local<Value>::Cast(Undefined(isolate));
+inline Persistent<Value> *getUserDataRef(eioWS::WebSocket *webSocket) {
+    return static_cast<Persistent<Value> *>(webSocket->getUserData());
 }
 
-void getUserData(const FunctionCallbackInfo<Value> &args) {
-    args.GetReturnValue().Set(getDataV8(unwrapSocket(args[0].As<External>()), args.GetIsolate()));
+inline Local<Value> getDataV8(eioWS::WebSocket *webSocket, Isolate *isolate) {
+    Persistent<Value> *userData = getUserDataRef(webSocket);
+    return userData ? Local<Value>::New(isolate, *userData) : Local<Value>::Cast(Undefined(isolate));
 }
 
 void clearUserData(const FunctionCallbackInfo<Value> &args) {
     eioWS::WebSocket *webSocket = unwrapSocket(args[0].As<External>());
-    ((Persistent<Value> *)webSocket->getUserData())->Reset();
-    delete (Persistent<Value> *)webSocket->getUserData();
+    Persistent<Value> *userData = getUserDataRef(webSocket);
+    if (userData) {
+        userData->Reset();
+        delete userData;
+        webSocket->setUserData(nullptr);
+    }
 }
 
 void setUserData(const FunctionCallbackInfo<Value> &args) {
     eioWS::WebSocket *webSocket = unwrapSocket(args[0].As<External>());
-    if (webSocket->getUserData()) {
-        ((Persistent<Value> *)webSocket->getUserData())->Reset(args.GetIsolate(), args[1]);
+    Persistent<Value> *userData = getUserDataRef(webSocket);
+    if (userData) {
+        userData->Reset(args.GetIsolate(), args[1]);
     } else {
         webSocket->setUserData(new Persistent<Value>(args.GetIsolate(), args[1]));
     }
@@ -170,12 +249,19 @@ struct SendCallbackData {
     Isolate *isolate;
 };
 
-void sendCallback(eioWS::WebSocket *webSocket, void *data, bool cancelled, void *reserved) {
+void sendCallback(eioWS::WebSocket *, void *data, bool cancelled, void *) {
     SendCallbackData *sc = static_cast<SendCallbackData *>(data);
-    if (!cancelled) {
-        HandleScope hs(sc->isolate);
-        Local<Function>::New(sc->isolate, sc->jsCallback)->Call(sc->isolate->GetCurrentContext(), Null(sc->isolate), 0, nullptr);
-    }
+    HandleScope hs(sc->isolate);
+    Local<Context> context = sc->isolate->GetCurrentContext();
+    Local<Object> process = Local<Object>::New(sc->isolate, processObject);
+    Local<Function> nextTick = Local<Function>::New(sc->isolate, processNextTick);
+    Local<Value> argv[] = {
+        Local<Function>::New(sc->isolate, sc->jsCallback),
+        cancelled ? Exception::Error(String::NewFromUtf8Literal(sc->isolate, "send cancelled")) : Undefined(sc->isolate)
+    };
+    nextTick->Call(context, process, cancelled ? 2 : 1, argv);
+    scheduleTick();
+
     sc->jsCallback.Reset();
     delete sc;
 }
@@ -203,6 +289,21 @@ struct Ticket {
     SSL *ssl;
 };
 
+void releaseTicket(Ticket *ticket) {
+    if (!ticket) {
+        return;
+    }
+    if (ticket->fd != INVALID_SOCKET) {
+        uS::Context::closeSocket(ticket->fd);
+        ticket->fd = INVALID_SOCKET;
+    }
+    if (ticket->ssl) {
+        SSL_free(ticket->ssl);
+        ticket->ssl = nullptr;
+    }
+    delete ticket;
+}
+
 void upgrade(const FunctionCallbackInfo<Value> &args) {
     eioWS::Group *serverGroup = (eioWS::Group *)args[0].As<External>()->Value();
     Ticket *ticket = static_cast<Ticket *>(args[1].As<External>()->Value());
@@ -214,12 +315,21 @@ void upgrade(const FunctionCallbackInfo<Value> &args) {
     // todo: move this check into core!
     if (ticket->fd != INVALID_SOCKET) {
         hub.upgrade(ticket->fd, secKey.getData(), ticket->ssl, extensions.getData(), extensions.getLength(), subprotocol.getData(), subprotocol.getLength(), serverGroup);
+        ticket->fd = INVALID_SOCKET;
+        ticket->ssl = nullptr;
+        args.GetReturnValue().Set(True(isolate));
     } else {
-        if (ticket->ssl) {
-            SSL_free(ticket->ssl);
-        }
+        releaseTicket(ticket);
+        args.GetReturnValue().Set(False(isolate));
+        return;
     }
     delete ticket;
+}
+
+void destroyTicket(const FunctionCallbackInfo<Value> &args) {
+    if (args.Length() && args[0]->IsExternal()) {
+        releaseTicket(static_cast<Ticket *>(args[0].As<External>()->Value()));
+    }
 }
 
 void transfer(const FunctionCallbackInfo<Value> &args) {
@@ -256,11 +366,11 @@ void onConnection(const FunctionCallbackInfo<Value> &args) {
     Isolate *isolate = args.GetIsolate();
     Persistent<Function> *connectionCallback = &groupData->connectionHandler;
     connectionCallback->Reset(isolate, Local<Function>::Cast(args[1]));
-    group->onConnection([isolate, connectionCallback, groupData](eioWS::WebSocket *webSocket) {
-        groupData->size++;
+    group->onConnection([isolate, connectionCallback](eioWS::WebSocket *webSocket) {
         HandleScope hs(isolate);
         Local<Value> argv[] = {wrapSocket(webSocket, isolate)};
         Local<Function>::New(isolate, *connectionCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 1, argv);
+        scheduleTick();
     });
 }
 
@@ -272,13 +382,15 @@ void onMessage(const FunctionCallbackInfo<Value> &args) {
     Persistent<Function> *messageCallback = &groupData->messageHandler;
 
     messageCallback->Reset(isolate, Local<Function>::Cast(args[1]));
-    group->onMessage([isolate, messageCallback, group](eioWS::WebSocket *webSocket, const char *message, size_t length, eioWS::OpCode opCode) {
-        if(length != 1 || message[0] != 65) {
-            HandleScope hs(isolate);
-            Local<Value> argv[] = {wrapMessage(message, length, opCode, isolate),
-            getDataV8(webSocket, isolate)};
-            Local<Function>::New(isolate, *messageCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 2, argv);
-        }
+    group->onMessage([isolate, messageCallback](eioWS::WebSocket *webSocket, const char *message, size_t length, eioWS::OpCode opCode) {
+        HandleScope hs(isolate);
+        Local<Value> argv[] = {
+            wrapMessage(message, length, opCode, isolate),
+            getDataV8(webSocket, isolate),
+            Boolean::New(isolate, opCode == eioWS::OpCode::BINARY)
+        };
+        Local<Function>::New(isolate, *messageCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 3, argv);
+        scheduleTick();
     });
 }
 
@@ -290,26 +402,29 @@ void onDisconnection(const FunctionCallbackInfo<Value> &args) {
     Persistent<Function> *disconnectionCallback = &groupData->disconnectionHandler;
     disconnectionCallback->Reset(isolate, Local<Function>::Cast(args[1]));
 
-    group->onDisconnection([isolate, disconnectionCallback, groupData]( eioWS::WebSocket *webSocket, int code, char *message, size_t length) {
-        groupData->size--;
+    group->onDisconnection([isolate, disconnectionCallback](eioWS::WebSocket *webSocket, int code, char *message, size_t length) {
         HandleScope hs(isolate);
         Local<Value> argv[] = {
         wrapSocket(webSocket, isolate), Integer::New(isolate, code),
         wrapMessage(message, length, eioWS::OpCode::CLOSE, isolate),
         getDataV8(webSocket, isolate)};
         Local<Function>::New(isolate, *disconnectionCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 4, argv);
+        scheduleTick();
     });
 }
 
 void closeSocket(const FunctionCallbackInfo<Value> &args) {
+    int code = args[1]->IsNumber() ? args[1].As<Integer>()->Value() : 1000;
     NativeString nativeString(args.GetIsolate(), args[2]);
-    unwrapSocket(args[0].As<External>())->close(args[1].As<Integer>()->Value(), nativeString.getData(), nativeString.getLength());
+    unwrapSocket(args[0].As<External>())->close(code, nativeString.getData(), nativeString.getLength());
 }
 
 void closeGroup(const FunctionCallbackInfo<Value> &args) {
+    int code = args[1]->IsNumber() ? args[1].As<Integer>()->Value() : 1000;
     NativeString nativeString(args.GetIsolate(), args[2]);
     eioWS::Group *group = (eioWS::Group *)args[0].As<External>()->Value();
-    group->close(args[1].As<Integer>()->Value(), nativeString.getData(), nativeString.getLength());
+    group->close(code, nativeString.getData(), nativeString.getLength());
+    group->markForDeletion();
 }
 
 void getSSLContext(const FunctionCallbackInfo<Value> &args) {
@@ -325,7 +440,7 @@ void getSSLContext(const FunctionCallbackInfo<Value> &args) {
     tw->setSSL(args);
 }
 
-void setNoop(const FunctionCallbackInfo<Value> &args) {
+    void setNoop(const FunctionCallbackInfo<Value> &args) {
     noop.Reset(args.GetIsolate(), Local<Function>::Cast(args[0]));
 }
 

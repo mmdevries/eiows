@@ -1,21 +1,14 @@
-#ifndef HUB_UWS_H
-#define HUB_UWS_H
+#ifndef HUB_EIOWS_H
+#define HUB_EIOWS_H
 
 #include <zlib.h>
 #include <string>
-#include <mutex>
-#include <map>
 #include "Group.h"
 #include "Node.h"
 
 namespace eioWS {
     struct Hub : protected uS::Node, public Group {
         protected:
-            struct ConnectionData {
-                std::string path;
-                void *user;
-            };
-
             static z_stream *allocateDefaultCompressor(z_stream *zStream);
 
             z_stream inflationStream = {}, deflationStream = {};
@@ -24,10 +17,11 @@ namespace eioWS {
             char *zlibBuffer;
             std::string dynamicZlibBuffer;
             static const int LARGE_BUFFER_SIZE = 300 * 1024;
+            static const size_t RETAINED_BUFFER_LIMIT = 1024 * 1024;
 
         public:
             Group *createGroup(int extensionOptions = 0, unsigned int maxPayload = 16777216) {
-                return new Group(extensionOptions, maxPayload, this, nodeData);
+                return new Group(extensionOptions, maxPayload, this, nodeData, true);
             }
 
             Group &getDefaultGroup() {
@@ -37,8 +31,8 @@ namespace eioWS {
             void upgrade(uv_os_sock_t fd, const char *secKey, SSL *ssl, const char *extensions, size_t extensionsLength, const char *subprotocol, size_t subprotocolLength, Group *serverGroup = nullptr);
 
             Hub(int extensionOptions = 0, unsigned int maxPayload = 16777216) :
-                uS::Node(LARGE_BUFFER_SIZE, WebSocketProtocol<WebSocket>::CONSUME_PRE_PADDING, WebSocketProtocol<WebSocket>::CONSUME_POST_PADDING),
-                Group(extensionOptions, maxPayload, this, nodeData) {
+                uS::Node(LARGE_BUFFER_SIZE, WebSocketProtocol::CONSUME_PRE_PADDING, WebSocketProtocol::CONSUME_POST_PADDING),
+                Group(extensionOptions, maxPayload, this, nodeData, false) {
                     inflateInit2(&inflationStream, -15);
                     zlibBuffer = new char[LARGE_BUFFER_SIZE];
                     allocateDefaultCompressor(&deflationStream);
@@ -59,4 +53,4 @@ namespace eioWS {
     };
 }
 
-#endif // HUB_UWS_H
+#endif // HUB_EIOWS_H

@@ -1,5 +1,5 @@
-#ifndef WEBSOCKET_UWS_H
-#define WEBSOCKET_UWS_H
+#ifndef WEBSOCKET_EIOWS_H
+#define WEBSOCKET_EIOWS_H
 
 #include <string>
 #include "WebSocketProtocol.h"
@@ -10,6 +10,12 @@ namespace eioWS {
 
     struct WebSocket : uS::Socket, WebSocketState {
         protected:
+            struct TransformData {
+                OpCode opCode;
+                bool compress;
+                WebSocket *webSocket;
+            };
+
             unsigned int maxPayload;
             std::string fragmentBuffer;
             enum CompressionStatus : char {
@@ -17,7 +23,7 @@ namespace eioWS {
                 ENABLED,
                 COMPRESSED_FRAME
             } compressionStatus;
-            unsigned char controlTipLength = 0, hasOutstandingPong = false;
+            unsigned char controlTipLength = 0;
 
             void *slidingDeflateWindow = nullptr;
 
@@ -48,29 +54,24 @@ namespace eioWS {
                 webSocket->terminate();
             }
 
+            static size_t transformMessage(const char *src, char *dst, size_t length, void *transformData);
+            static void deleteSocket(uS::Poll *p);
             static bool handleFragment(char *data, size_t length, unsigned int remainingBytes, int opCode, bool fin, WebSocketState *webSocketState);
+            static const WebSocketProtocolHooks protocolHooks;
 
             void upgrade(const char *secKey, const std::string& extensionsResponse, const char *subprotocol, size_t subprotocolLength);
 
         public:
-            struct PreparedMessage {
-                char *buffer;
-                size_t length;
-                int references;
-                void(*callback)(void *webSocket, void *data, bool cancelled, void *reserved);
-            };
-
             void close(int code = 1000, const char *message = nullptr, size_t length = 0);
             void terminate();
-            void ping(const char *message) {send(message, OpCode::PING);}
+            void setState() { uS::Socket::setState(onData, onEnd); }
             void send(const char *message, OpCode opCode = OpCode::TEXT) {send(message, strlen(message), opCode);}
             void send(const char *message, size_t length, OpCode opCode, void(*callback)(WebSocket *webSocket, void *data, bool cancelled, void *reserved) = nullptr, void *callbackData = nullptr, bool compress = false);
 
             friend struct Hub;
             friend struct Group;
             friend struct uS::Socket;
-            friend class WebSocketProtocol<WebSocket>;
     };
 }
 
-#endif // WEBSOCKET_UWS_H
+#endif // WEBSOCKET_EIOWS_H

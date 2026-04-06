@@ -1,5 +1,5 @@
-#ifndef GROUP_UWS_H
-#define GROUP_UWS_H
+#ifndef GROUP_EIOWS_H
+#define GROUP_EIOWS_H
 
 #include "WebSocket.h"
 #include "Extensions.h"
@@ -22,42 +22,31 @@ namespace eioWS {
             Hub *hub;
             int extensionOptions;
             std::stack<uS::Poll *> iterators;
-
-            // todo: cannot be named user, collides with parent!
             void *userData = nullptr;
+            void (*userDataDeleter)(void *) = nullptr;
+            unsigned int liveWebSockets = 0;
+            bool owned = false;
+            bool deleteOnDrain = false;
 
             WebSocket *webSocketHead = nullptr;
 
             void addWebSocket(WebSocket *webSocket);
             void removeWebSocket(WebSocket *webSocket);
+            void destroy();
 
-            Group(int extensionOptions, unsigned int maxPayload, Hub *hub, uS::NodeData *nodeData);
+            Group(int extensionOptions, unsigned int maxPayload, Hub *hub, uS::NodeData *nodeData, bool owned = false);
 
         public:
             void onConnection(const std::function<void(WebSocket *)> &handler);
             void onMessage(const std::function<void(WebSocket *, char *, size_t, OpCode)> &handler);
             void onDisconnection(const std::function<void(WebSocket *, int code, char *message, size_t length)> &handler);
 
-            void setUserData(void *user);
+            void setUserData(void *user, void (*deleter)(void *) = nullptr);
             void *getUserData();
+            void markForDeletion();
+            void onSocketClosed();
 
             void close(int code = 1000, char *message = nullptr, size_t length = 0);
-
-            template <class F>
-                void forEach(const F &cb) {
-                    uS::Poll *iterator = webSocketHead;
-                    iterators.push(iterator);
-                    while (iterator) {
-                        uS::Poll *lastIterator = iterator;
-                        cb(static_cast<WebSocket *>(iterator));
-                        iterator = iterators.top();
-                        if (lastIterator == iterator) {
-                            iterator = ((uS::Socket *) iterator)->next;
-                            iterators.top() = iterator;
-                        }
-                    }
-                    iterators.pop();
-                }
 
             static Group *from(uS::Socket *s) {
                 return static_cast<Group *>(s->getNodeData());
@@ -65,4 +54,4 @@ namespace eioWS {
     };
 }
 
-#endif // GROUP_UWS_H
+#endif // GROUP_EIOWS_H

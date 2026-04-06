@@ -1,15 +1,13 @@
-#ifndef EXTENSIONS_UWS_H
-#define EXTENSIONS_UWS_H
+#ifndef EXTENSIONS_EIOWS_H
+#define EXTENSIONS_EIOWS_H
 
 #include <string>
 
 namespace eioWS {
     enum Options : unsigned int {
-        NO_OPTIONS = 0,
         PERMESSAGE_DEFLATE = 1,
-        SERVER_NO_CONTEXT_TAKEOVER = 2, // remove this
-        CLIENT_NO_CONTEXT_TAKEOVER = 4, // remove this
-        NO_DELAY = 8,
+        SERVER_NO_CONTEXT_TAKEOVER = 2,
+        CLIENT_NO_CONTEXT_TAKEOVER = 4,
         SLIDING_DEFLATE_WINDOW = 16
     };
 
@@ -24,4 +22,4 @@ namespace eioWS {
     };
 }
 
-#endif // EXTENSIONS_UWS_H
+#endif // EXTENSIONS_EIOWS_H
