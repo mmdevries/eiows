@@ -4,6 +4,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <algorithm>
+#include <cstring>
 #include "Networking.h"
 
 namespace uS {
