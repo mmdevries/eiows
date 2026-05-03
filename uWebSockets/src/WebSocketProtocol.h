@@ -2,6 +2,7 @@
 #define WEBSOCKETPROTOCOL_EIOWS_H
 
 #include <uv.h>
+#include <cstdint>
 #include <cstring>
 #ifdef __APPLE__
 #include <libkern/OSByteOrder.h>
@@ -95,6 +96,18 @@ namespace eioWS {
                 *(data++) ^= mask[2];
                 *(data++) ^= mask[3];
             }
+        }
+
+        static inline uint16_t readUint16BE(const char *src) {
+            uint16_t value;
+            memcpy(&value, src, sizeof(value));
+            return ntohs(value);
+        }
+
+        static inline uint64_t readUint64BE(const char *src) {
+            uint64_t value;
+            memcpy(&value, src, sizeof(value));
+            return be64toh(value);
         }
 
         static inline bool consumeMessage(uint64_t payLength, unsigned int messageHeader, char *&src, unsigned int &length, WebSocketState *wState, const WebSocketProtocolHooks &hooks) {
@@ -240,8 +253,7 @@ namespace eioWS {
                 }
 
                 if (length >= 2) {
-                    memcpy(&cf.code, src, 2);
-                    cf = {ntohs(cf.code), src + 2, length - 2};
+                    cf = {readUint16BE(src), src + 2, length - 2};
                     if (cf.code < 1000 || cf.code > 4999 || (cf.code > 1011 && cf.code < 4000) ||
                         (cf.code >= 1004 && cf.code <= 1006) || !isValidUtf8((unsigned char *) cf.message, cf.length)) {
                         return {1006, "", 0};
@@ -272,11 +284,13 @@ namespace eioWS {
                 } else if (reportedLength <= UINT16_MAX) {
                     headerLength = 4;
                     dst[1] = 126;
-                    *(reinterpret_cast<uint16_t *>(&dst[2])) = htons(reportedLength);
+                    uint16_t networkLength = htons(static_cast<uint16_t>(reportedLength));
+                    memcpy(&dst[2], &networkLength, sizeof(networkLength));
                 } else {
                     headerLength = 10;
                     dst[1] = 127;
-                    *(reinterpret_cast<uint64_t *>(&dst[2])) = htobe64(reportedLength);
+                    uint64_t networkLength = htobe64(reportedLength);
+                    memcpy(&dst[2], &networkLength, sizeof(networkLength));
                 }
 
                 dst[0] = 128 | (compressed ? SND_COMPRESSED : 0) | opCode;
@@ -312,13 +326,24 @@ namespace eioWS {
                         } else if (payloadLength(src) == 126) {
                             if (length < MEDIUM_MESSAGE_HEADER) {
                                 break;
-                            } else if (consumeMessage(ntohs(*reinterpret_cast<uint16_t *>(&src[2])), MEDIUM_MESSAGE_HEADER, src, length, wState, hooks)) {
+                            }
+                            uint16_t extendedPayloadLength = readUint16BE(&src[2]);
+                            if (extendedPayloadLength < 126) {
+                                hooks.forceClose(wState);
+                                return;
+                            } else if (consumeMessage(extendedPayloadLength, MEDIUM_MESSAGE_HEADER, src, length, wState, hooks)) {
                                 return;
                             }
                         } else if (length < LONG_MESSAGE_HEADER) {
                             break;
-                        } else if (consumeMessage(be64toh(*reinterpret_cast<uint64_t *>(&src[2])), LONG_MESSAGE_HEADER, src, length, wState, hooks)) {
-                            return;
+                        } else {
+                            uint64_t extendedPayloadLength = readUint64BE(&src[2]);
+                            if ((extendedPayloadLength & (uint64_t(1) << 63)) || extendedPayloadLength <= UINT16_MAX) {
+                                hooks.forceClose(wState);
+                                return;
+                            } else if (consumeMessage(extendedPayloadLength, LONG_MESSAGE_HEADER, src, length, wState, hooks)) {
+                                return;
+                            }
                         }
                     }
                     if (length) {

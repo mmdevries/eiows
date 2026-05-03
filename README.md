@@ -1,5 +1,5 @@
 eiows is a replacement module for ws which allows, but doesn't guarantee, significant performance and memory-usage improvements. This module is specifically only compatible with Node.js.
-This package is mainly meant for projects that want eiows as a high-performance `ws` replacement. It requires engine.io (3.4.2 or higher) and should work on Node 16, 18, 20, 22 and 24. Git should be installed on the system to build and compile the module.
+This package is mainly meant for projects that want eiows as a high-performance `ws` replacement. It requires engine.io (3.4.2 or higher) and should work on Node 16, 18, 20, 22, 24 and 26. Git should be installed on the system to build and compile the module.
 This module only runs on Linux/FreeBSD/MacOS.
 
 Installation:

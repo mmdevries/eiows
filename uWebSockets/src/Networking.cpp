@@ -1,7 +1,8 @@
 #include "Networking.h"
+#include <csignal>
 
-namespace uS {
+namespace {
     struct Init {
-        Init() {signal(SIGPIPE, SIG_IGN);}
+        Init() {std::signal(SIGPIPE, SIG_IGN);}
     } init;
 }

@@ -6,9 +6,9 @@ default:
 	git clone -c advice.detachedHead=false --depth 1 https://github.com/nodejs/node -b $(NODE) nodejs/src/node
 	mv nodejs/src/node/src/crypto/crypto_tls.h nodejs/src/node/src/crypto/crypto_tls.h.bak
 	@if [ "$(USE_NCRYPTO)" -eq "1" ]; then \
-		awk '1;/is_awaiting_new_session/{print "const ncrypto::SSLPointer *getSSL() const { return &ssl_; }"}' nodejs/src/node/src/crypto/crypto_tls.h.bak > nodejs/src/node/src/crypto/crypto_tls.h; \
+		awk '/ncrypto::SSLPointer ssl_;/ && !done { print " public:"; print "  const ncrypto::SSLPointer *getSSL() const { return &ssl_; }"; print " private:"; done = 1 } { print } END { if (!done) exit 1 }' nodejs/src/node/src/crypto/crypto_tls.h.bak > nodejs/src/node/src/crypto/crypto_tls.h; \
 	else \
-		awk '1;/is_awaiting_new_session/{print "  const SSLPointer *getSSL() const { return &ssl_; }"}' nodejs/src/node/src/crypto/crypto_tls.h.bak > nodejs/src/node/src/crypto/crypto_tls.h; \
+		awk '/SSLPointer ssl_;/ && !done { print " public:"; print "  const SSLPointer *getSSL() const { return &ssl_; }"; print " private:"; done = 1 } { print } END { if (!done) exit 1 }' nodejs/src/node/src/crypto/crypto_tls.h.bak > nodejs/src/node/src/crypto/crypto_tls.h; \
 	fi
 
 .PHONY: clean

@@ -127,18 +127,20 @@ class WebSocket {
         return this;
     }
 
-    send(message, options, cb) { // options will be ignored
+    send(message, options, cb) {
+        if (typeof options === 'function') {
+            cb = options;
+            options = undefined;
+        }
+
         if (this.external && this.readyState === eiows.OPEN) {
             const binary = (typeof message !== 'string');
             var compress = false;
-            if (this.compressEnabled) {
+            if (this.compressEnabled && (!options || options.compress !== false)) {
                 var byteLength = getMessageByteLength(message, binary);
                 if (byteLength >= this.compressThreshold) {
                     compress = true;
                 }
-            }
-            if (typeof options === 'function') {
-                cb = options;
             }
             native.server.send(this.external, message, binary ? eiows.OPCODE_BINARY : eiows.OPCODE_TEXT, cb, compress);
         } else if (cb) {

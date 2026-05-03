@@ -3,7 +3,7 @@
 #include <openssl/ssl.h>
 #include <uv.h>
 
-#if NODE_MAJOR_VERSION >= 25
+#if NODE_MAJOR_VERSION == 25 && NODE_MINOR_VERSION < 9
 namespace node {
 using StartExecutionCallbackWithModule = StartExecutionCallback;
 }
@@ -25,6 +25,22 @@ using StartExecutionCallbackWithModule = StartExecutionCallback;
 #pragma GCC diagnostic pop
 #endif
 
+inline v8::Local<v8::External> makeExternal(v8::Isolate *isolate, void *value) {
+#if NODE_MAJOR_VERSION >= 26
+    return v8::External::New(isolate, value, v8::kExternalPointerTypeTagDefault);
+#else
+    return v8::External::New(isolate, value);
+#endif
+}
+
+inline void *getExternalValue(v8::Local<v8::External> external) {
+#if NODE_MAJOR_VERSION >= 26
+    return external->Value(v8::kExternalPointerTypeTagDefault);
+#else
+    return external->Value();
+#endif
+}
+
 using BaseObject = node::BaseObject;
 using TLSWrap = node::crypto::TLSWrap;
 
@@ -37,7 +53,7 @@ class TLSWrapSSLGetter : public TLSWrap {
                 return;
             }
             SSL* ptr = getSSL()->get();
-            info.GetReturnValue().Set(v8::External::New(isolate, ptr));
+            info.GetReturnValue().Set(makeExternal(isolate, ptr));
         }
 };
 #undef NODE_WANT_INTERNALS
@@ -168,15 +184,23 @@ void destroyGroupData(void *data) {
 void createGroup(const FunctionCallbackInfo<Value> &args) {
     eioWS::Group *group = hub.createGroup(args[0].As<Integer>()->Value(), args[1].As<Integer>()->Value());
     group->setUserData(new GroupData, destroyGroupData);
-    args.GetReturnValue().Set(External::New(args.GetIsolate(), group));
+    args.GetReturnValue().Set(makeExternal(args.GetIsolate(), group));
 }
 
 inline Local<External> wrapSocket(eioWS::WebSocket *webSocket, Isolate *isolate) {
-    return External::New(isolate, webSocket);
+    return makeExternal(isolate, webSocket);
 }
 
 inline eioWS::WebSocket *unwrapSocket(Local<External> external) {
-    return (eioWS::WebSocket *)external->Value();
+    return static_cast<eioWS::WebSocket *>(getExternalValue(external));
+}
+
+inline void *getInternalFieldPointer(Local<Object> object, int index) {
+#if NODE_MAJOR_VERSION >= 26
+    return object->GetAlignedPointerFromInternalField(index, v8::kEmbedderDataTypeTagDefault);
+#else
+    return object->GetAlignedPointerFromInternalField(index);
+#endif
 }
 
 inline Local<Value> wrapMessage(const char *message, size_t length, eioWS::OpCode opCode, Isolate *isolate) {
@@ -308,14 +332,13 @@ void releaseTicket(Ticket *ticket) {
 }
 
 void upgrade(const FunctionCallbackInfo<Value> &args) {
-    eioWS::Group *serverGroup = (eioWS::Group *)args[0].As<External>()->Value();
-    Ticket *ticket = static_cast<Ticket *>(args[1].As<External>()->Value());
+    eioWS::Group *serverGroup = static_cast<eioWS::Group *>(getExternalValue(args[0].As<External>()));
+    Ticket *ticket = static_cast<Ticket *>(getExternalValue(args[1].As<External>()));
     Isolate *isolate = args.GetIsolate();
     NativeString secKey(isolate, args[2]);
     NativeString extensions(isolate, args[3]);
     NativeString subprotocol(isolate, args[4]);
 
-    // todo: move this check into core!
     if (ticket->fd != INVALID_SOCKET) {
         hub.upgrade(ticket->fd, secKey.getData(), ticket->ssl, extensions.getData(), extensions.getLength(), subprotocol.getData(), subprotocol.getLength(), serverGroup);
         ticket->fd = INVALID_SOCKET;
@@ -331,7 +354,7 @@ void upgrade(const FunctionCallbackInfo<Value> &args) {
 
 void destroyTicket(const FunctionCallbackInfo<Value> &args) {
     if (args.Length() && args[0]->IsExternal()) {
-        releaseTicket(static_cast<Ticket *>(args[0].As<External>()->Value()));
+        releaseTicket(static_cast<Ticket *>(getExternalValue(args[0].As<External>())));
     }
 }
 
@@ -341,7 +364,7 @@ void transfer(const FunctionCallbackInfo<Value> &args) {
     Ticket *ticket = new Ticket;
     if (args[0]->IsObject()) {
         Local<Context> context = args.GetIsolate()->GetCurrentContext();
-        uv_fileno((handle = getTcpHandle( args[0]->ToObject(context).ToLocalChecked()->GetAlignedPointerFromInternalField(0))), (uv_os_fd_t *)&ticket->fd);
+        uv_fileno((handle = getTcpHandle(getInternalFieldPointer(args[0]->ToObject(context).ToLocalChecked(), 0))), (uv_os_fd_t *)&ticket->fd);
     } else {
         ticket->fd = args[0].As<Integer>()->Value();
     }
@@ -349,7 +372,7 @@ void transfer(const FunctionCallbackInfo<Value> &args) {
     ticket->fd = dup(ticket->fd);
     ticket->ssl = nullptr;
     if (args[1]->IsExternal()) {
-        ticket->ssl = (SSL *)args[1].As<External>()->Value();
+        ticket->ssl = static_cast<SSL *>(getExternalValue(args[1].As<External>()));
         SSL_up_ref(ticket->ssl);
     }
 
@@ -359,11 +382,11 @@ void transfer(const FunctionCallbackInfo<Value> &args) {
         handle->flags |= 0x40000000;
     }
 
-    args.GetReturnValue().Set(External::New(args.GetIsolate(), ticket));
+    args.GetReturnValue().Set(makeExternal(args.GetIsolate(), ticket));
 }
 
 void onConnection(const FunctionCallbackInfo<Value> &args) {
-    eioWS::Group *group = (eioWS::Group *)args[0].As<External>()->Value();
+    eioWS::Group *group = static_cast<eioWS::Group *>(getExternalValue(args[0].As<External>()));
     GroupData *groupData = static_cast<GroupData *>(group->getUserData());
 
     Isolate *isolate = args.GetIsolate();
@@ -378,7 +401,7 @@ void onConnection(const FunctionCallbackInfo<Value> &args) {
 }
 
 void onMessage(const FunctionCallbackInfo<Value> &args) {
-    eioWS::Group *group = (eioWS::Group *)args[0].As<External>()->Value();
+    eioWS::Group *group = static_cast<eioWS::Group *>(getExternalValue(args[0].As<External>()));
     GroupData *groupData = static_cast<GroupData *>(group->getUserData());
 
     Isolate *isolate = args.GetIsolate();
@@ -398,7 +421,7 @@ void onMessage(const FunctionCallbackInfo<Value> &args) {
 }
 
 void onDisconnection(const FunctionCallbackInfo<Value> &args) {
-    eioWS::Group *group = (eioWS::Group *)args[0].As<External>()->Value();
+    eioWS::Group *group = static_cast<eioWS::Group *>(getExternalValue(args[0].As<External>()));
     GroupData *groupData = static_cast<GroupData *>(group->getUserData());
 
     Isolate *isolate = args.GetIsolate();
@@ -408,9 +431,11 @@ void onDisconnection(const FunctionCallbackInfo<Value> &args) {
     group->onDisconnection([isolate, disconnectionCallback](eioWS::WebSocket *webSocket, int code, char *message, size_t length) {
         HandleScope hs(isolate);
         Local<Value> argv[] = {
-        wrapSocket(webSocket, isolate), Integer::New(isolate, code),
-        wrapMessage(message, length, eioWS::OpCode::CLOSE, isolate),
-        getDataV8(webSocket, isolate)};
+            wrapSocket(webSocket, isolate),
+            Integer::New(isolate, code),
+            wrapMessage(message, length, eioWS::OpCode::CLOSE, isolate),
+            getDataV8(webSocket, isolate)
+        };
         Local<Function>::New(isolate, *disconnectionCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 4, argv);
         scheduleTick();
     });
@@ -425,7 +450,7 @@ void closeSocket(const FunctionCallbackInfo<Value> &args) {
 void closeGroup(const FunctionCallbackInfo<Value> &args) {
     int code = args[1]->IsNumber() ? args[1].As<Integer>()->Value() : 1000;
     NativeString nativeString(args.GetIsolate(), args[2]);
-    eioWS::Group *group = (eioWS::Group *)args[0].As<External>()->Value();
+    eioWS::Group *group = static_cast<eioWS::Group *>(getExternalValue(args[0].As<External>()));
     group->close(code, nativeString.getData(), nativeString.getLength());
     group->markForDeletion();
 }
@@ -443,7 +468,7 @@ void getSSLContext(const FunctionCallbackInfo<Value> &args) {
     tw->setSSL(args);
 }
 
-    void setNoop(const FunctionCallbackInfo<Value> &args) {
+void setNoop(const FunctionCallbackInfo<Value> &args) {
     noop.Reset(args.GetIsolate(), Local<Function>::Cast(args[0]));
 }
 

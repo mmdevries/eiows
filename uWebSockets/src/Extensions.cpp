@@ -1,4 +1,5 @@
 #include "Extensions.h"
+#include <cctype>
 
 namespace eioWS {
 
@@ -15,13 +16,13 @@ namespace eioWS {
     };
 
     int ExtensionsParser::getToken(const char *&in, const char *stop) {
-        while (in != stop && !isalnum(*in)) {
+        while (in != stop && !std::isalnum(static_cast<unsigned char>(*in))) {
             in++;
         }
 
         int hashedToken = 0;
-        while (in != stop && (isalnum(*in) || *in == '-' || *in == '_')) {
-            if (isdigit(*in)) {
+        while (in != stop && (std::isalnum(static_cast<unsigned char>(*in)) || *in == '-' || *in == '_')) {
+            if (std::isdigit(static_cast<unsigned char>(*in))) {
                 hashedToken = hashedToken * 10 - (*in - '0');
             } else {
                 hashedToken += *in;
@@ -58,7 +59,7 @@ namespace eioWS {
         return extensionsOffer;
     }
 
-    void ExtensionsNegotiator::readOffer(std::string offer) {
+    void ExtensionsNegotiator::readOffer(const std::string &offer) {
         ExtensionsParser extensionsParser(offer.data(), offer.length());
         if (!((options & PERMESSAGE_DEFLATE) && extensionsParser.perMessageDeflate)) {
             options &= ~PERMESSAGE_DEFLATE;

@@ -1,5 +1,3 @@
-// the purpose of this header should be to provide SSL and networking wrapped in a common interface
-// it should allow cross-platform networking and SSL and also easy usage of mTCP and similar tech
 #ifndef NETWORKING_EIOWS_H
 #define NETWORKING_EIOWS_H
 
@@ -11,24 +9,18 @@
 #include "Libuv.h"
 
 namespace uS {
-    // todo: mark sockets nonblocking in these functions
-    // todo: probably merge this Context with the TLS::Context for same interface for SSL and non-SSL!
     struct Context {
-        Context() {}
-        ~Context() {}
-
         static void closeSocket(uv_os_sock_t fd) {
             close(fd);
         }
 
         static bool wouldBlock() {
-            return errno == EWOULDBLOCK;// || errno == EAGAIN;
+            return errno == EWOULDBLOCK || errno == EAGAIN;
         }
     };
 
     struct Socket;
 
-    // NodeData is like a Context, maybe merge them?
     struct NodeData {
         char *recvBufferMemoryBlock;
         char *recvBuffer;

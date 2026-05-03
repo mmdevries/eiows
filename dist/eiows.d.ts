@@ -1,4 +1,7 @@
 export type WebSocketMessage = string | Buffer;
+export interface SendOptions {
+    compress?: boolean;
+}
 
 export interface SocketAddress {
     remotePort: number;
@@ -22,7 +25,8 @@ export class WebSocket {
     once(eventName: string, listener: (...args: any[]) => void): this;
     removeListener(eventName: string, listener: (...args: any[]) => void): this;
     readonly _socket: SocketAddress;
-    send(message: string | Buffer | ArrayBuffer | ArrayBufferView, options?: any, cb?: (err?: Error) => void): void;
+    send(message: string | Buffer | ArrayBuffer | ArrayBufferView, cb?: (err?: Error) => void): void;
+    send(message: string | Buffer | ArrayBuffer | ArrayBufferView, options: SendOptions | null, cb?: (err?: Error) => void): void;
     close(code?: number, data?: string | Buffer | ArrayBuffer | ArrayBufferView): void;
 }
 

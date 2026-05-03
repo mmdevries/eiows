@@ -56,7 +56,6 @@ namespace eioWS {
         return zlibBuffer;
     }
 
-    // todo: let's go through this code once more some time!
     char *Hub::inflate(char *data, size_t &length, size_t maxPayload) {
         dynamicZlibBuffer.clear();
         trimLargeStringBuffer(dynamicZlibBuffer, RETAINED_BUFFER_LIMIT);

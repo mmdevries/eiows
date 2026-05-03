@@ -17,7 +17,7 @@ namespace eioWS {
         public:
             ExtensionsNegotiator(int wantedOptions);
             std::string generateOffer() const;
-            void readOffer(std::string offer);
+            void readOffer(const std::string &offer);
             int getNegotiatedOptions() const;
     };
 }

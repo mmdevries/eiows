@@ -242,7 +242,7 @@ namespace uS {
                     int length = static_cast<int>(recv(socket->getFd(), nodeData->recvBuffer, nodeData->recvLength, 0));
                     if (length > 0) {
                         socket->dataHandler(static_cast<Socket *>(p), nodeData->recvBuffer, length);
-                    } else if (length <= 0 || (length == SOCKET_ERROR && !netContext->wouldBlock())) {
+                    } else if (length == 0 || !netContext->wouldBlock()) {
                         socket->endHandler(static_cast<Socket *>(p));
                     }
                 }
@@ -266,7 +266,7 @@ namespace uS {
                 messageQueue.push(message);
             }
 
-            Queue::Message *allocMessage(size_t length, const char *data = 0) {
+            Queue::Message *allocMessage(size_t length, const char *data = nullptr) {
                 Queue::Message *messagePtr = (Queue::Message *) new char[sizeof(Queue::Message) + length];
                 messagePtr->length = length;
                 messagePtr->memoryIndex = -1;
@@ -321,7 +321,7 @@ namespace uS {
                         if (sent == (ssize_t) message->length) {
                             waiting = false;
                             return true;
-                        } else if (sent < 0) {
+                        } else if (sent <= 0) {
                             switch (SSL_get_error(ssl, static_cast<int>(sent))) {
                                 case SSL_ERROR_WANT_READ:
                                     break;
@@ -368,11 +368,10 @@ namespace uS {
 
             void sendTransformed(const char *message, size_t length, TransformCallback transform, void *transformData, void(*callback)(void *socket, void *data, bool cancelled, void *reserved), void *callbackData) {
                 size_t estimatedLength = length + HEADER_LENGTH + sizeof(Queue::Message);
+                Queue::Message *messagePtr = allocMessageForPayload(estimatedLength - sizeof(Queue::Message));
+                messagePtr->length = transform(message, const_cast<char *>(messagePtr->data), length, transformData);
 
                 if (hasEmptyQueue()) {
-                    Queue::Message *messagePtr = allocMessageForPayload(estimatedLength - sizeof(Queue::Message));
-                    messagePtr->length = transform(message, const_cast<char *>(messagePtr->data), length, transformData);
-
                     bool waiting;
                     if (write(messagePtr, waiting)) {
                         if (!waiting) {
@@ -391,8 +390,6 @@ namespace uS {
                         }
                     }
                 } else {
-                    Queue::Message *messagePtr = allocMessageForPayload(estimatedLength - sizeof(Queue::Message));
-                    messagePtr->length = transform(message, const_cast<char *>(messagePtr->data), length, transformData);
                     messagePtr->callback = callback;
                     messagePtr->callbackData = callbackData;
                     enqueue(messagePtr);
@@ -436,7 +433,6 @@ namespace uS {
 
             void shutdown() {
                 if (ssl) {
-                    //todo: poll in/out - have the io_cb recall shutdown if failed
                     SSL_shutdown(ssl);
                 } else {
                     ::shutdown(getFd(), SHUT_WR);

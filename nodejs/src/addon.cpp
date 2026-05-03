@@ -3,7 +3,7 @@
 
 void Main(Local<Object> exports)
 {
-    Isolate *isolate = exports->GetIsolate();
+    Isolate *isolate = Isolate::GetCurrent();
     exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "server", NewStringType::kNormal).ToLocalChecked(), Namespace(isolate).object);
     NODE_SET_METHOD(exports, "getSSLContext", getSSLContext);
     NODE_SET_METHOD(exports, "setUserData", setUserData);
