@@ -15,6 +15,11 @@ namespace eioWS {
                 bool compress;
                 WebSocket *webSocket;
             };
+            struct PreparedTransformData {
+                OpCode opCode;
+                size_t (*writePayload)(char *dst, size_t length, void *data);
+                void *data;
+            };
 
             unsigned int maxPayload;
             std::string fragmentBuffer;
@@ -55,6 +60,7 @@ namespace eioWS {
             }
 
             static size_t transformMessage(const char *src, char *dst, size_t length, void *transformData);
+            static size_t transformPreparedMessage(char *dst, size_t length, void *transformData);
             static void deleteSocket(uS::Poll *p);
             static bool handleFragment(char *data, size_t length, unsigned int remainingBytes, int opCode, bool fin, WebSocketState *webSocketState);
             static const WebSocketProtocolHooks protocolHooks;
@@ -67,6 +73,7 @@ namespace eioWS {
             void setState() { uS::Socket::setState(onData, onEnd); }
             void send(const char *message, OpCode opCode = OpCode::TEXT) {send(message, strlen(message), opCode);}
             void send(const char *message, size_t length, OpCode opCode, void(*callback)(WebSocket *webSocket, void *data, bool cancelled, void *reserved) = nullptr, void *callbackData = nullptr, bool compress = false);
+            void sendPrepared(size_t length, OpCode opCode, size_t (*writePayload)(char *dst, size_t length, void *data), void *data, void(*callback)(WebSocket *webSocket, void *data, bool cancelled, void *reserved) = nullptr, void *callbackData = nullptr);
 
             friend struct Hub;
             friend struct Group;

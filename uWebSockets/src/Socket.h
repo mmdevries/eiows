@@ -365,6 +365,37 @@ namespace uS {
             }
 
             typedef size_t (*TransformCallback)(const char *message, char *dst, size_t length, void *transformData);
+            typedef size_t (*PrepareCallback)(char *dst, size_t length, void *prepareData);
+
+            void sendPrepared(size_t length, PrepareCallback prepare, void *prepareData, void(*callback)(void *socket, void *data, bool cancelled, void *reserved), void *callbackData) {
+                size_t estimatedLength = length + HEADER_LENGTH + sizeof(Queue::Message);
+                Queue::Message *messagePtr = allocMessageForPayload(estimatedLength - sizeof(Queue::Message));
+                messagePtr->length = prepare(const_cast<char *>(messagePtr->data), length, prepareData);
+
+                if (hasEmptyQueue()) {
+                    bool waiting;
+                    if (write(messagePtr, waiting)) {
+                        if (!waiting) {
+                            freeMessage(messagePtr);
+                            if (callback) {
+                                callback(this, callbackData, false, nullptr);
+                            }
+                        } else {
+                            messagePtr->callback = callback;
+                            messagePtr->callbackData = callbackData;
+                        }
+                    } else {
+                        freeMessage(messagePtr);
+                        if (callback) {
+                            callback(this, callbackData, true, nullptr);
+                        }
+                    }
+                } else {
+                    messagePtr->callback = callback;
+                    messagePtr->callbackData = callbackData;
+                    enqueue(messagePtr);
+                }
+            }
 
             void sendTransformed(const char *message, size_t length, TransformCallback transform, void *transformData, void(*callback)(void *socket, void *data, bool cancelled, void *reserved), void *callbackData) {
                 size_t estimatedLength = length + HEADER_LENGTH + sizeof(Queue::Message);

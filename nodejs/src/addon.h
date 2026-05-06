@@ -68,6 +68,9 @@ Persistent<Function> processNextTick;
 bool needsTick = false;
 bool checkInitialized = false;
 
+template <typename T>
+inline void ignoreV8Result(const T &) {}
+
 void scheduleTick() {
     needsTick = true;
 }
@@ -99,7 +102,7 @@ void registerCheck(Isolate *isolate) {
         needsTick = false;
         Isolate *isolate = (Isolate *)check->data;
         HandleScope hs(isolate);
-        Local<Function>::New(isolate, noop)->Call(isolate->GetCurrentContext(), Null(isolate), 0, nullptr);
+        ignoreV8Result(Local<Function>::New(isolate, noop)->Call(isolate->GetCurrentContext(), Null(isolate), 0, nullptr));
     });
     uv_unref((uv_handle_t *)&check);
 }
@@ -251,9 +254,9 @@ void getAddress(const FunctionCallbackInfo<Value> &args) {
     typename eioWS::WebSocket::Address address = unwrapSocket(args[0].As<External>())->getAddress();
     Isolate *isolate = args.GetIsolate();
     Local<Array> array = Array::New(isolate, 3);
-    array->Set(isolate->GetCurrentContext(), 0, Integer::New(isolate, address.port));
-    array->Set(isolate->GetCurrentContext(), 1, String::NewFromUtf8(isolate, address.address, NewStringType::kNormal).ToLocalChecked());
-    array->Set(isolate->GetCurrentContext(), 2, String::NewFromUtf8(isolate, address.family,  NewStringType::kNormal).ToLocalChecked());
+    ignoreV8Result(array->Set(isolate->GetCurrentContext(), 0, Integer::New(isolate, address.port)));
+    ignoreV8Result(array->Set(isolate->GetCurrentContext(), 1, String::NewFromUtf8(isolate, address.address, NewStringType::kNormal).ToLocalChecked()));
+    ignoreV8Result(array->Set(isolate->GetCurrentContext(), 2, String::NewFromUtf8(isolate, address.family,  NewStringType::kNormal).ToLocalChecked()));
     args.GetReturnValue().Set(array);
 }
 
@@ -273,6 +276,40 @@ struct SendCallbackData {
     Isolate *isolate;
 };
 
+struct WriteUtf8Data {
+    Isolate *isolate;
+    Local<String> string;
+};
+
+size_t getUtf8Length(Isolate *isolate, Local<String> string) {
+#if NODE_MAJOR_VERSION >= 24
+    return string->Utf8LengthV2(isolate);
+#else
+    return static_cast<size_t>(string->Utf8Length(isolate));
+#endif
+}
+
+size_t writeUtf8Payload(char *dst, size_t length, void *data) {
+    WriteUtf8Data *writeData = static_cast<WriteUtf8Data *>(data);
+#if NODE_MAJOR_VERSION >= 24
+    return writeData->string->WriteUtf8V2(
+        writeData->isolate,
+        dst,
+        length,
+        String::WriteFlags::kNone
+    );
+#else
+    int written = writeData->string->WriteUtf8(
+        writeData->isolate,
+        dst,
+        static_cast<int>(length),
+        nullptr,
+        String::NO_NULL_TERMINATION
+    );
+    return static_cast<size_t>(written);
+#endif
+}
+
 void sendCallback(eioWS::WebSocket *, void *data, bool cancelled, void *) {
     SendCallbackData *sc = static_cast<SendCallbackData *>(data);
     HandleScope hs(sc->isolate);
@@ -286,7 +323,7 @@ void sendCallback(eioWS::WebSocket *, void *data, bool cancelled, void *) {
         Local<Function>::New(sc->isolate, sc->jsCallback),
         error
     };
-    nextTick->Call(context, process, cancelled ? 2 : 1, argv);
+    ignoreV8Result(nextTick->Call(context, process, cancelled ? 2 : 1, argv));
     scheduleTick();
 
     sc->jsCallback.Reset();
@@ -295,7 +332,6 @@ void sendCallback(eioWS::WebSocket *, void *data, bool cancelled, void *) {
 
 void send(const FunctionCallbackInfo<Value> &args) {
     eioWS::OpCode opCode = (eioWS::OpCode)args[2].As<Integer>()->Value();
-    NativeString nativeString(args.GetIsolate(), args[1]);
 
     SendCallbackData *sc = nullptr;
     void (*callback)(eioWS::WebSocket *, void *, bool, void *) = nullptr;
@@ -308,6 +344,15 @@ void send(const FunctionCallbackInfo<Value> &args) {
     }
 
     bool compress = args[4].As<Boolean>()->Value();
+    if (!compress && args[1]->IsString()) {
+        Isolate *isolate = args.GetIsolate();
+        WriteUtf8Data writeData = {isolate, args[1].As<String>()};
+        size_t length = getUtf8Length(isolate, writeData.string);
+        unwrapSocket(args[0].As<External>())->sendPrepared(length, opCode, writeUtf8Payload, &writeData, callback, sc);
+        return;
+    }
+
+    NativeString nativeString(args.GetIsolate(), args[1]);
     unwrapSocket(args[0].As<External>())->send(nativeString.getData(), nativeString.getLength(), opCode, callback, sc, compress);
 }
 
@@ -395,7 +440,7 @@ void onConnection(const FunctionCallbackInfo<Value> &args) {
     group->onConnection([isolate, connectionCallback](eioWS::WebSocket *webSocket) {
         HandleScope hs(isolate);
         Local<Value> argv[] = {wrapSocket(webSocket, isolate)};
-        Local<Function>::New(isolate, *connectionCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 1, argv);
+        ignoreV8Result(Local<Function>::New(isolate, *connectionCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 1, argv));
         scheduleTick();
     });
 }
@@ -415,7 +460,7 @@ void onMessage(const FunctionCallbackInfo<Value> &args) {
             getDataV8(webSocket, isolate),
             Boolean::New(isolate, opCode == eioWS::OpCode::BINARY)
         };
-        Local<Function>::New(isolate, *messageCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 3, argv);
+        ignoreV8Result(Local<Function>::New(isolate, *messageCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 3, argv));
         scheduleTick();
     });
 }
@@ -436,7 +481,7 @@ void onDisconnection(const FunctionCallbackInfo<Value> &args) {
             wrapMessage(message, length, eioWS::OpCode::CLOSE, isolate),
             getDataV8(webSocket, isolate)
         };
-        Local<Function>::New(isolate, *disconnectionCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 4, argv);
+        ignoreV8Result(Local<Function>::New(isolate, *disconnectionCallback)->Call(isolate->GetCurrentContext(), Null(isolate), 4, argv));
         scheduleTick();
     });
 }
@@ -487,6 +532,6 @@ struct Namespace {
         NODE_SET_METHOD(group, "create", createGroup);
         NODE_SET_METHOD(group, "close", closeGroup);
 
-        object->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "group", NewStringType::kNormal).ToLocalChecked(), group);
+        ignoreV8Result(object->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "group", NewStringType::kNormal).ToLocalChecked(), group));
     }
 };

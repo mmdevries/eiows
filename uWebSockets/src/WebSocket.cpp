@@ -41,6 +41,12 @@ namespace eioWS {
         return WebSocketProtocol::formatMessage(dst, src, length, data->opCode, length, false);
     }
 
+    size_t WebSocket::transformPreparedMessage(char *dst, size_t length, void *transformData) {
+        PreparedTransformData *data = static_cast<PreparedTransformData *>(transformData);
+        size_t headerLength = WebSocketProtocol::formatMessageHeader(dst, data->opCode, length, false);
+        return headerLength + data->writePayload(dst + headerLength, length, data->data);
+    }
+
     void WebSocket::deleteSocket(uS::Poll *p) {
         delete static_cast<WebSocket *>(p);
     }
@@ -55,6 +61,11 @@ namespace eioWS {
     void WebSocket::send(const char *message, size_t length, OpCode opCode, void(*callback)(WebSocket *webSocket, void *data, bool cancelled, void *reserved), void *callbackData, bool compress) {
         TransformData transformData = {opCode, compress && compressionStatus == WebSocket::CompressionStatus::ENABLED && opCode < 3, this};
         sendTransformed(message, length, transformMessage, &transformData, (void(*)(void *, void *, bool, void *)) callback, callbackData);
+    }
+
+    void WebSocket::sendPrepared(size_t length, OpCode opCode, size_t (*writePayload)(char *dst, size_t length, void *data), void *data, void(*callback)(WebSocket *webSocket, void *data, bool cancelled, void *reserved), void *callbackData) {
+        PreparedTransformData transformData = {opCode, writePayload, data};
+        uS::Socket::sendPrepared(length, transformPreparedMessage, &transformData, (void(*)(void *, void *, bool, void *)) callback, callbackData);
     }
 
     uS::Socket *WebSocket::onData(uS::Socket *s, char *data, size_t length) {

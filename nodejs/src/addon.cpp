@@ -4,7 +4,7 @@
 void Main(Local<Object> exports)
 {
     Isolate *isolate = Isolate::GetCurrent();
-    exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "server", NewStringType::kNormal).ToLocalChecked(), Namespace(isolate).object);
+    ignoreV8Result(exports->Set(isolate->GetCurrentContext(), String::NewFromUtf8(isolate, "server", NewStringType::kNormal).ToLocalChecked(), Namespace(isolate).object));
     NODE_SET_METHOD(exports, "getSSLContext", getSSLContext);
     NODE_SET_METHOD(exports, "setUserData", setUserData);
     NODE_SET_METHOD(exports, "clearUserData", clearUserData);

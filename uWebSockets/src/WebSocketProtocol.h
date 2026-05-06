@@ -4,6 +4,10 @@
 #include <uv.h>
 #include <cstdint>
 #include <cstring>
+#if (defined(__x86_64__) || defined(__i386__)) && (defined(__GNUC__) || defined(__clang__))
+#include <immintrin.h>
+#define EIOWS_USE_AVX2 1
+#endif
 #ifdef __APPLE__
 #include <libkern/OSByteOrder.h>
 #define htobe64(x) OSSwapHostToBigInt64(x)
@@ -67,7 +71,69 @@ namespace eioWS {
         static inline bool rsv23(char *frame) {return *((unsigned char *) frame) & 48;}
         static inline bool rsv1(char *frame) {return *((unsigned char *) frame) & 64;}
 
+#ifdef EIOWS_USE_AVX2
+        static const unsigned int AVX2_UNMASK_MIN_LENGTH = 64;
+        static const unsigned int AVX2_UTF8_ASCII_MIN_LENGTH = 64;
+
+        static inline bool hasAvx2() {
+            static const bool available = []() {
+#if defined(__GNUC__) && !defined(__clang__)
+                __builtin_cpu_init();
+#endif
+                return __builtin_cpu_supports("avx2");
+            }();
+            return available;
+        }
+
+        __attribute__((target("avx2"), noinline))
+        static void unmaskAvx2(char *dst, const char *src, const char *mask, unsigned int length) {
+            int32_t mask32;
+            memcpy(&mask32, mask, sizeof(mask32));
+            const __m256i maskVector = _mm256_set1_epi32(mask32);
+
+            unsigned int i = 0;
+            for (; i + 32 <= length; i += 32) {
+                const __m256i input = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src + i));
+                const __m256i output = _mm256_xor_si256(input, maskVector);
+                _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst + i), output);
+            }
+
+            for (; i < length; i++) {
+                dst[i] = src[i] ^ mask[i & 3];
+            }
+
+            _mm256_zeroupper();
+        }
+
+        __attribute__((target("avx2"), noinline))
+        static unsigned char *skipAsciiAvx2(unsigned char *s, unsigned char *e) {
+            while (s + 32 <= e) {
+                const __m256i input = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(s));
+                const int highBits = _mm256_movemask_epi8(input);
+                if (highBits) {
+                    _mm256_zeroupper();
+                    return s + __builtin_ctz(static_cast<unsigned int>(highBits));
+                }
+                s += 32;
+            }
+
+            while (s != e && !(*s & 0x80)) {
+                s++;
+            }
+
+            _mm256_zeroupper();
+            return s;
+        }
+#endif
+
         static inline void unmaskImprecise(char *dst, char *src, char *mask, unsigned int length) {
+#ifdef EIOWS_USE_AVX2
+            unsigned int roundedLength = ((length >> 2) + 1) << 2;
+            if (roundedLength >= AVX2_UNMASK_MIN_LENGTH && hasAvx2()) {
+                unmaskAvx2(dst, src, mask, roundedLength);
+                return;
+            }
+#endif
             for (unsigned int n = (length >> 2) + 1; n; n--) {
                 *(dst++) = *(src++) ^ mask[0];
                 *(dst++) = *(src++) ^ mask[1];
@@ -90,6 +156,13 @@ namespace eioWS {
         }
 
         static inline void unmaskInplace(char *data, char *stop, char *mask) {
+#ifdef EIOWS_USE_AVX2
+            unsigned int length = static_cast<unsigned int>(stop - data);
+            if (length >= AVX2_UNMASK_MIN_LENGTH && hasAvx2()) {
+                unmaskAvx2(data, data, mask, length);
+                return;
+            }
+#endif
             while (data < stop) {
                 *(data++) ^= mask[0];
                 *(data++) ^= mask[1];
@@ -204,8 +277,16 @@ namespace eioWS {
             // Optimized for predominantly 7-bit content by Alex Hultman, 2016
             // Licensed as Zlib, like the rest of this project
             static bool isValidUtf8(unsigned char *s, size_t length) {
+#ifdef EIOWS_USE_AVX2
+                const bool useAvx2Ascii = length >= AVX2_UTF8_ASCII_MIN_LENGTH && hasAvx2();
+#endif
                 for (unsigned char *e = s + length; s != e; ) {
                     if (s + 4 <= e && ((*reinterpret_cast<uint32_t *>(s)) & 0x80808080) == 0) {
+#ifdef EIOWS_USE_AVX2
+                        if (useAvx2Ascii) {
+                            s = skipAsciiAvx2(s, e);
+                        } else
+#endif
                         s += 4;
                     } else {
                         while (!(*s & 0x80)) {
@@ -275,8 +356,7 @@ namespace eioWS {
                 return 0;
             }
 
-            static inline size_t formatMessage(char *dst, const char *src, size_t length, OpCode opCode, size_t reportedLength, bool compressed) {
-                size_t messageLength;
+            static inline size_t formatMessageHeader(char *dst, OpCode opCode, size_t reportedLength, bool compressed) {
                 size_t headerLength;
                 if (reportedLength < 126) {
                     headerLength = 2;
@@ -294,6 +374,13 @@ namespace eioWS {
                 }
 
                 dst[0] = 128 | (compressed ? SND_COMPRESSED : 0) | opCode;
+
+                return headerLength;
+            }
+
+            static inline size_t formatMessage(char *dst, const char *src, size_t length, OpCode opCode, size_t reportedLength, bool compressed) {
+                size_t messageLength;
+                size_t headerLength = formatMessageHeader(dst, opCode, reportedLength, compressed);
 
                 messageLength = headerLength + length;
                 memcpy(dst + headerLength, src, length);
@@ -359,5 +446,9 @@ namespace eioWS {
             static const int CONSUME_PRE_PADDING = LONG_MESSAGE_HEADER - 1;
     };
 }
+
+#ifdef EIOWS_USE_AVX2
+#undef EIOWS_USE_AVX2
+#endif
 
 #endif // WEBSOCKETPROTOCOL_EIOWS_H
