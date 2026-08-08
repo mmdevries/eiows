@@ -28,12 +28,13 @@ yarn add eiows
 
 Release packages are built manually with `.github/workflows/prebuilds.yml`.
 After updating the version in `package.json`, commit the release and push a tag
-matching that version, such as `10.0.0` or `v10.0.0`. Run the workflow from the
-GitHub Actions page and enter that tag as `release_tag`. The workflow verifies
-the tag, package version and commit, then builds every prebuild from the same
-resolved commit. It assembles one npm tarball and verifies that tarball without
-running install scripts on Node.js 22/24/26 with glibc and musl. Download the
-`npm-package` workflow artifact and publish the contained tarball manually with
+matching that version on the same commit, such as `10.0.0` or `v10.0.0`. Run
+the workflow with that tag selected on the GitHub Actions page; no release
+input is required. The workflow requires a tag ref, verifies that it matches
+the package version, then builds every prebuild from the tag's exact commit.
+It assembles one npm tarball and verifies that tarball without running install
+scripts on Node.js 22/24/26 with glibc and musl. Download the `npm-package`
+workflow artifact and publish the contained tarball manually with
 `npm publish eiows-*.tgz --access public`.
 
 

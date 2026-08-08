@@ -1,13 +1,7 @@
 name: Prebuilds
-run-name: Prebuild ${{ inputs.release_tag }}
 
 on:
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: Release tag to build (for example 10.0.0 or v10.0.0)
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -21,8 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.release_tag }}
-          fetch-depth: 0
+          fetch-depth: 1
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -30,28 +23,30 @@ jobs:
       - name: Match tag, commit and package version
         id: release
         env:
-          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_REF: ${{ github.ref_name }}
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+          WORKFLOW_SHA: ${{ github.sha }}
         run: |
-          if ! git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"; then
-            echo "${RELEASE_TAG} is not a tag" >&2
+          if [ "$RELEASE_REF_TYPE" != "tag" ]; then
+            echo "workflow must be run from a tag, got ${RELEASE_REF_TYPE} ${RELEASE_REF}" >&2
             exit 1
           fi
 
           package_version="$(node -p "require('./package.json').version")"
-          tag_version="${RELEASE_TAG#v}"
+          tag_version="${RELEASE_REF#v}"
           if [ "$tag_version" != "$package_version" ]; then
-            echo "tag ${RELEASE_TAG} does not match package version ${package_version}" >&2
+            echo "tag ${RELEASE_REF} does not match package version ${package_version}" >&2
             exit 1
           fi
 
-          release_sha="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
-          head_sha="$(git rev-parse HEAD)"
-          if [ "$release_sha" != "$head_sha" ]; then
-            echo "checked-out commit ${head_sha} does not match tag commit ${release_sha}" >&2
+          release_sha="$(git rev-parse HEAD)"
+          if [ "$release_sha" != "$WORKFLOW_SHA" ]; then
+            echo "checked-out commit ${release_sha} does not match workflow commit ${WORKFLOW_SHA}" >&2
             exit 1
           fi
 
           echo "release_sha=${release_sha}" >> "$GITHUB_OUTPUT"
+          echo "Validated ${RELEASE_REF} at ${release_sha}" >> "$GITHUB_STEP_SUMMARY"
 
   linux:
     name: Linux ${{ matrix.arch }} / ${{ matrix.libc }}
