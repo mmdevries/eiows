@@ -2,6 +2,7 @@
 
 const { createHash } = require('node:crypto');
 const { EventEmitter } = require('node:events');
+const path = require('node:path');
 
 const DEFAULT_PAYLOAD_LIMIT = 16777216;
 const CLOSE_TIMEOUT = 15000;
@@ -23,10 +24,10 @@ eiows.CLOSED = 3;
 
 const native = (() => {
     try {
-        return require('./eiows.node');
+        return require('node-gyp-build')(path.join(__dirname, '..'));
     } catch (error) {
-        throw new Error(error.toString() + '\n\nCompilation of eiows has failed. ' +
-            'Please install a supported C++17 compiler and rebuild the module.');
+        throw new Error(error.toString() + '\n\nNo compatible eiows native binary was found. ' +
+            'Please install a supported C++17 compiler and rebuild the module from source.');
     }
 })();
 

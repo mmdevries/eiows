@@ -19,6 +19,7 @@
     "dist/eiows.js",
     "dist/eiows.d.ts",
     "dist/wrapper.mjs",
+    "prebuilds",
     "nodejs/LICENSE",
     "nodejs/src/addon.cpp",
     "uWebSockets/LICENSE",
@@ -30,7 +31,8 @@
   ],
   "scripts": {
     "build": "node-gyp rebuild",
-    "install": "node-gyp rebuild > build_log.txt 2>&1",
+    "install": "node-gyp-build",
+    "prebuildify": "prebuildify --napi --target=22.0.0 --strip",
     "test": "node --test test/*.test.js"
   },
   "engines": {
@@ -50,5 +52,12 @@
     "url": "https://github.com/mmdevries/eiows/issues"
   },
   "homepage": "https://github.com/mmdevries/eiows",
-  "gypfile": true
+  "gypfile": true,
+  "dependencies": {
+    "node-gyp-build": "^4.8.4"
+  },
+  "devDependencies": {
+    "node-gyp": "^13.0.1",
+    "prebuildify": "^6.0.1"
+  }
 }
