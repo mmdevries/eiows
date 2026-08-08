@@ -5,12 +5,17 @@
   "license": "MIT",
   "main": "./dist/eiows.js",
   "types": "./dist/eiows.d.ts",
-  "os": ["!win32", "linux", "freebsd", "darwin"],
+  "os": [
+    "!win32",
+    "linux",
+    "freebsd",
+    "darwin"
+  ],
   "exports": {
     ".": {
+      "types": "./dist/eiows.d.ts",
       "import": "./dist/wrapper.mjs",
-      "require": "./dist/eiows.js",
-      "types": "./dist/eiows.d.ts"
+      "require": "./dist/eiows.js"
     },
     "./package.json": "./package.json"
   },
@@ -33,6 +38,8 @@
     "build": "node-gyp rebuild",
     "install": "node-gyp-build",
     "prebuildify": "prebuildify --napi --target=22.0.0 --strip",
+    "pretest": "npm run test:types",
+    "test:types": "tsc -p test/types/tsconfig.json",
     "test": "node --test test/*.test.js"
   },
   "engines": {
@@ -57,7 +64,9 @@
     "node-gyp-build": "^4.8.4"
   },
   "devDependencies": {
+    "@types/node": "^22.20.1",
     "node-gyp": "^13.0.1",
-    "prebuildify": "^6.0.1"
+    "prebuildify": "^6.0.1",
+    "typescript": "^5.9.3"
   }
 }

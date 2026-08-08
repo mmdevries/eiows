@@ -12,6 +12,7 @@ const test = require('node:test');
 const zlib = require('node:zlib');
 
 const eiows = require('..');
+const native = require('node-gyp-build')(path.join(__dirname, '..'));
 
 const fixtures = path.join(__dirname, 'fixtures');
 const tlsOptions = {
@@ -230,6 +231,32 @@ async function runEchoCase(secure) {
 test('keeps the HTTP socket in Node and consumes upgradeHead', () => runEchoCase(false));
 test('keeps the TLS socket in Node without accessing SSLPointer', () => runEchoCase(true));
 
+test('exposes the same supported API through ESM and CommonJS', async () => {
+    const esm = await import('../dist/wrapper.mjs');
+    const exportedNames = [
+        'WebSocket',
+        'Server',
+        'compressThreshold',
+        'PERMESSAGE_DEFLATE',
+        'SERVER_NO_CONTEXT_TAKEOVER',
+        'CLIENT_NO_CONTEXT_TAKEOVER',
+        'SLIDING_DEFLATE_WINDOW',
+        'CONNECTING',
+        'OPCODE_TEXT',
+        'OPCODE_BINARY',
+        'OPCODE_PING',
+        'OPEN',
+        'CLOSING',
+        'CLOSED'
+    ];
+
+    assert.strictEqual(esm.default, eiows);
+    for (const name of exportedNames) {
+        assert.strictEqual(esm[name], eiows[name], `mismatched ESM export: ${name}`);
+    }
+    assert.equal(Object.hasOwn(eiows, 'native'), false);
+});
+
 test('negotiates permessage-deflate and handles compressed client frames', async () => {
     const server = http.createServer();
     const wsServer = new eiows.Server({
@@ -292,10 +319,10 @@ test('only negotiates valid and supported permessage-deflate offers', () => {
     const options = eiows.PERMESSAGE_DEFLATE |
         eiows.CLIENT_NO_CONTEXT_TAKEOVER |
         eiows.SERVER_NO_CONTEXT_TAKEOVER;
-    const context = eiows.native.createCompressionContext();
+    const context = native.createCompressionContext();
     const negotiate = (offer) => {
-        const [session, response] = eiows.native.createSession(options, 1024, offer, context);
-        eiows.native.dispose(session);
+        const [session, response] = native.createSession(options, 1024, offer, context);
+        native.dispose(session);
         return response;
     };
 
@@ -316,9 +343,9 @@ test('safely reuses no-context-takeover streams between sessions', () => {
     const options = eiows.PERMESSAGE_DEFLATE |
         eiows.CLIENT_NO_CONTEXT_TAKEOVER |
         eiows.SERVER_NO_CONTEXT_TAKEOVER;
-    const context = eiows.native.createCompressionContext();
-    const [first] = eiows.native.createSession(options, 4096, 'permessage-deflate', context);
-    const [second] = eiows.native.createSession(options, 4096, 'permessage-deflate', context);
+    const context = native.createCompressionContext();
+    const [first] = native.createSession(options, 4096, 'permessage-deflate', context);
+    const [second] = native.createSession(options, 4096, 'permessage-deflate', context);
     const payload = 'shared compression context '.repeat(40);
     const compressed = zlib.deflateRawSync(payload, {
         flush: zlib.constants.Z_SYNC_FLUSH,
@@ -327,17 +354,47 @@ test('safely reuses no-context-takeover streams between sessions', () => {
 
     for (const session of [first, second]) {
         assert.deepEqual(
-            eiows.native.consume(session, clientFrame(compressed, { compressed: true })),
+            native.consume(session, clientFrame(compressed, { compressed: true })),
             [[0, payload, false]]
         );
-        const frame = parseServerFrame(eiows.native.frame(session, payload, 1, true));
+        const frame = parseServerFrame(native.frame(session, payload, 1, true));
         const inflated = zlib.inflateRawSync(Buffer.concat([
             frame.payload,
             Buffer.from([0x00, 0x00, 0xff, 0xff])
         ]), { finishFlush: zlib.constants.Z_SYNC_FLUSH });
         assert.equal(inflated.toString(), payload);
-        eiows.native.dispose(session);
+        native.dispose(session);
     }
+});
+
+test('rejects mismatched native handle types without corrupting either handle', () => {
+    const options = eiows.PERMESSAGE_DEFLATE |
+        eiows.CLIENT_NO_CONTEXT_TAKEOVER |
+        eiows.SERVER_NO_CONTEXT_TAKEOVER;
+    const context = native.createCompressionContext();
+    const [session] = native.createSession(0, 1024, '');
+
+    assert.throws(
+        () => native.consume(context, Buffer.alloc(0)),
+        { name: 'TypeError', message: 'expected a native WebSocket session' }
+    );
+    assert.throws(
+        () => native.dispose(context),
+        { name: 'TypeError', message: 'expected a native WebSocket session' }
+    );
+    assert.throws(
+        () => native.createSession(options, 1024, 'permessage-deflate', session),
+        { name: 'TypeError', message: 'expected a native compression context' }
+    );
+
+    const [compressedSession] = native.createSession(
+        options,
+        1024,
+        'permessage-deflate',
+        context
+    );
+    native.dispose(compressedSession);
+    native.dispose(session);
 });
 
 test('destroys rejected upgrade sockets after flushing the response', async () => {
@@ -352,14 +409,14 @@ test('destroys rejected upgrade sockets after flushing the response', async () =
 });
 
 test('rejects unmasked client frames with a protocol close', () => {
-    const [session] = eiows.native.createSession(0, 1024, '');
-    const events = eiows.native.consume(session, Buffer.from([0x81, 0x04, 0x74, 0x65, 0x73, 0x74]));
+    const [session] = native.createSession(0, 1024, '');
+    const events = native.consume(session, Buffer.from([0x81, 0x04, 0x74, 0x65, 0x73, 0x74]));
     assert.equal(events[0][0], 1);
     const closeFrame = parseServerFrame(events[0][1]);
     assert.equal(closeFrame.opCode, 8);
     assert.equal(closeFrame.payload.readUInt16BE(0), 1002);
     assert.deepEqual(events[1], [2, 1006, '']);
-    eiows.native.dispose(session);
+    native.dispose(session);
 });
 
 test('parses a masked frame split at every possible byte boundary', () => {
@@ -367,19 +424,19 @@ test('parses a masked frame split at every possible byte boundary', () => {
     const completeFrame = clientFrame(expected);
 
     for (let split = 1; split < completeFrame.length; split++) {
-        const [session] = eiows.native.createSession(0, 1024, '');
+        const [session] = native.createSession(0, 1024, '');
         const frame = Buffer.from(completeFrame);
-        const firstEvents = eiows.native.consume(session, frame.subarray(0, split));
-        const secondEvents = eiows.native.consume(session, frame.subarray(split));
+        const firstEvents = native.consume(session, frame.subarray(0, split));
+        const secondEvents = native.consume(session, frame.subarray(split));
         const events = firstEvents.concat(secondEvents);
         assert.deepEqual(events, [[0, expected, false]], `split at byte ${split}`);
-        eiows.native.dispose(session);
+        native.dispose(session);
     }
 });
 
 test('handles fragmented messages with an interleaved ping', () => {
-    const [session] = eiows.native.createSession(0, 1024, '');
-    const events = eiows.native.consume(session, Buffer.concat([
+    const [session] = native.createSession(0, 1024, '');
+    const events = native.consume(session, Buffer.concat([
         clientFrame('fragment-', { fin: false }),
         clientFrame('health', { opCode: 9 }),
         clientFrame('message', { opCode: 0 })
@@ -391,24 +448,74 @@ test('handles fragmented messages with an interleaved ping', () => {
     assert.equal(pong.opCode, 10);
     assert.equal(pong.payload.toString(), 'health');
     assert.deepEqual(events[1], [0, 'fragment-message', false]);
-    eiows.native.dispose(session);
+    native.dispose(session);
+});
+
+test('rejects a new data frame after an interleaved control frame', () => {
+    for (const opCode of [9, 10]) {
+        const controlFrame = clientFrame('health', { opCode });
+        const splitPoints = [null];
+        for (let split = 1; split < controlFrame.length; split++) {
+            splitPoints.push(split);
+        }
+
+        for (const split of splitPoints) {
+            const [session] = native.createSession(0, 1024, '');
+            const events = [];
+            events.push(...native.consume(
+                session,
+                clientFrame('fragment-', { fin: false })
+            ));
+            if (split === null) {
+                events.push(...native.consume(session, Buffer.from(controlFrame)));
+            } else {
+                events.push(...native.consume(
+                    session,
+                    Buffer.from(controlFrame.subarray(0, split))
+                ));
+                events.push(...native.consume(
+                    session,
+                    Buffer.from(controlFrame.subarray(split))
+                ));
+            }
+            events.push(...native.consume(
+                session,
+                clientFrame('second-message', { opCode: 2 })
+            ));
+
+            assert.equal(
+                events.some((event) => event[0] === 0),
+                false,
+                `accepted data after opcode ${opCode}, split ${split}`
+            );
+            const closeEvent = events.find((event) => event[0] === 2);
+            assert.deepEqual(closeEvent, [2, 1006, '']);
+            const closeFrame = events
+                .filter((event) => event[0] === 1)
+                .map((event) => parseServerFrame(event[1]))
+                .find((frame) => frame.opCode === 8);
+            assert.ok(closeFrame, 'missing protocol close frame');
+            assert.equal(closeFrame.payload.readUInt16BE(0), 1002);
+            native.dispose(session);
+        }
+    }
 });
 
 test('enforces maxPayload and treats zero as unlimited', () => {
     const limitedFrame = clientFrame('12345');
-    const [limitedSession] = eiows.native.createSession(0, 4, '');
-    const limitedEvents = eiows.native.consume(limitedSession, limitedFrame);
+    const [limitedSession] = native.createSession(0, 4, '');
+    const limitedEvents = native.consume(limitedSession, limitedFrame);
     assert.equal(limitedEvents[0][0], 1);
     assert.equal(parseServerFrame(limitedEvents[0][1]).payload.readUInt16BE(0), 1009);
     assert.deepEqual(limitedEvents[1], [2, 1006, '']);
-    eiows.native.dispose(limitedSession);
+    native.dispose(limitedSession);
 
-    const [unlimitedSession] = eiows.native.createSession(0, 0, '');
+    const [unlimitedSession] = native.createSession(0, 0, '');
     assert.deepEqual(
-        eiows.native.consume(unlimitedSession, clientFrame('12345')),
+        native.consume(unlimitedSession, clientFrame('12345')),
         [[0, '12345', false]]
     );
-    eiows.native.dispose(unlimitedSession);
+    native.dispose(unlimitedSession);
 });
 
 test('uses close code 1009 when inflated data exceeds maxPayload', () => {
@@ -417,12 +524,12 @@ test('uses close code 1009 when inflated data exceeds maxPayload', () => {
         flush: zlib.constants.Z_SYNC_FLUSH,
         finishFlush: zlib.constants.Z_SYNC_FLUSH
     }).subarray(0, -4);
-    const [session] = eiows.native.createSession(
+    const [session] = native.createSession(
         eiows.PERMESSAGE_DEFLATE,
         32,
         'permessage-deflate'
     );
-    const events = eiows.native.consume(
+    const events = native.consume(
         session,
         clientFrame(compressed, { compressed: true })
     );
@@ -430,15 +537,15 @@ test('uses close code 1009 when inflated data exceeds maxPayload', () => {
     assert.equal(events[0][0], 1);
     assert.equal(parseServerFrame(events[0][1]).payload.readUInt16BE(0), 1009);
     assert.deepEqual(events[1], [2, 1006, '']);
-    eiows.native.dispose(session);
+    native.dispose(session);
 });
 
 test('echoes a valid close frame and reports its code and reason', () => {
-    const [session] = eiows.native.createSession(0, 1024, '');
+    const [session] = native.createSession(0, 1024, '');
     const closePayload = Buffer.alloc(5);
     closePayload.writeUInt16BE(1000, 0);
     closePayload.write('bye', 2);
-    const events = eiows.native.consume(session, clientFrame(closePayload, { opCode: 8 }));
+    const events = native.consume(session, clientFrame(closePayload, { opCode: 8 }));
 
     assert.equal(events[0][0], 1);
     const close = parseServerFrame(events[0][1]);
@@ -446,23 +553,23 @@ test('echoes a valid close frame and reports its code and reason', () => {
     assert.equal(close.payload.readUInt16BE(0), 1000);
     assert.equal(close.payload.subarray(2).toString(), 'bye');
     assert.deepEqual(events[1], [2, 1000, 'bye']);
-    eiows.native.dispose(session);
+    native.dispose(session);
 });
 
 test('accepts current IANA close codes', () => {
     for (const code of [1012, 1013, 1014]) {
-        const [session] = eiows.native.createSession(0, 1024, '');
+        const [session] = native.createSession(0, 1024, '');
         const payload = Buffer.alloc(2);
         payload.writeUInt16BE(code);
-        const events = eiows.native.consume(session, clientFrame(payload, { opCode: 8 }));
+        const events = native.consume(session, clientFrame(payload, { opCode: 8 }));
         assert.deepEqual(events[1], [2, code, '']);
-        eiows.native.dispose(session);
+        native.dispose(session);
     }
 });
 
 test('rejects a new data frame during a fragmented message', () => {
-    const [session] = eiows.native.createSession(0, 1024, '');
-    const events = eiows.native.consume(session, Buffer.concat([
+    const [session] = native.createSession(0, 1024, '');
+    const events = native.consume(session, Buffer.concat([
         clientFrame('text', { fin: false }),
         clientFrame(Buffer.from('binary'), { opCode: 2 })
     ]));
@@ -470,12 +577,12 @@ test('rejects a new data frame during a fragmented message', () => {
     assert.equal(events[0][0], 1);
     assert.equal(parseServerFrame(events[0][1]).payload.readUInt16BE(0), 1002);
     assert.deepEqual(events[1], [2, 1006, '']);
-    eiows.native.dispose(session);
+    native.dispose(session);
 });
 
 test('allows a control frame at the fragmented message payload limit', () => {
-    const [session] = eiows.native.createSession(0, 4, '');
-    const events = eiows.native.consume(session, Buffer.concat([
+    const [session] = native.createSession(0, 4, '');
+    const events = native.consume(session, Buffer.concat([
         clientFrame('1234', { fin: false }),
         clientFrame('x', { opCode: 9 }),
         clientFrame('', { opCode: 0 })
@@ -483,26 +590,26 @@ test('allows a control frame at the fragmented message payload limit', () => {
 
     assert.equal(parseServerFrame(events[0][1]).opCode, 10);
     assert.deepEqual(events[1], [0, '1234', false]);
-    eiows.native.dispose(session);
+    native.dispose(session);
 });
 
 test('waits for the peer close after initiating the close handshake', () => {
-    const [session] = eiows.native.createSession(0, 1024, '');
-    const closeFrame = eiows.native.closeFrame(session, 1000, Buffer.from('done'));
+    const [session] = native.createSession(0, 1024, '');
+    const closeFrame = native.closeFrame(session, 1000, Buffer.from('done'));
     assert.equal(parseServerFrame(closeFrame).opCode, 8);
 
     const peerPayload = Buffer.alloc(4);
     peerPayload.writeUInt16BE(1000, 0);
     peerPayload.write('ok', 2);
     assert.deepEqual(
-        eiows.native.consume(session, clientFrame(peerPayload, { opCode: 8 })),
+        native.consume(session, clientFrame(peerPayload, { opCode: 8 })),
         [[2, 1000, 'ok']]
     );
-    eiows.native.dispose(session);
+    native.dispose(session);
 });
 
 test('writes uncompressed frames without copying their payload', async () => {
-    const [session] = eiows.native.createSession(0, 1024 * 1024, '');
+    const [session] = native.createSession(0, 1024 * 1024, '');
     const socket = new CapturingSocket();
     const webSocket = new eiows.WebSocket(session, socket, null, false, 1024, '', '');
 
@@ -529,7 +636,7 @@ test('writes uncompressed frames without copying their payload', async () => {
 });
 
 test('does not allocate zlib streams for every idle compression session', () => {
-    const context = eiows.native.createCompressionContext();
+    const context = native.createCompressionContext();
     const options = eiows.PERMESSAGE_DEFLATE |
         eiows.CLIENT_NO_CONTEXT_TAKEOVER |
         eiows.SERVER_NO_CONTEXT_TAKEOVER;
@@ -537,7 +644,7 @@ test('does not allocate zlib streams for every idle compression session', () => 
     const before = process.memoryUsage().rss;
 
     for (let index = 0; index < 2000; index++) {
-        const [session] = eiows.native.createSession(
+        const [session] = native.createSession(
             options,
             1024,
             'permessage-deflate',
@@ -547,7 +654,7 @@ test('does not allocate zlib streams for every idle compression session', () => 
     }
 
     const increase = process.memoryUsage().rss - before;
-    for (const session of sessions) eiows.native.dispose(session);
+    for (const session of sessions) native.dispose(session);
     assert.ok(
         increase < 64 * 1024 * 1024,
         `idle compression sessions increased RSS by ${Math.round(increase / 1024 / 1024)} MiB`

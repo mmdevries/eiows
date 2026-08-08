@@ -552,6 +552,5 @@ class Server extends EventEmitter {
 
 eiows.WebSocket = WebSocket;
 eiows.Server = Server;
-eiows.native = native;
 
 module.exports = eiows;

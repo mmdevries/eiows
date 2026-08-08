@@ -185,13 +185,13 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: npm-package
-      - name: Install without compilation and load native addon
+      - name: Install without compilation and verify public API
         run: |
           docker run --rm \
             --volume "${GITHUB_WORKSPACE}:/package" \
             --workdir /package \
             "node:${{ matrix.node }}-${{ matrix.image_suffix }}" \
-            sh -c 'mkdir smoke && cd smoke && npm init -y >/dev/null && npm install --ignore-scripts ../eiows-*.tgz && node -e "const e = require(\"eiows\"); const s = e.native.createSession(0, 1024, \"\")[0]; e.native.dispose(s)"'
+            sh -c 'mkdir smoke && cd smoke && npm init -y >/dev/null && npm install --ignore-scripts ../eiows-*.tgz && node -e "(async () => { const cjs = require(\"eiows\"); const esm = await import(\"eiows\"); if (typeof cjs.Server !== \"function\" || esm.Server !== cjs.Server || esm.default !== cjs || \"native\" in cjs) throw new Error(\"invalid public module API\"); })()"'
 
   publish:
     name: Publish to npm

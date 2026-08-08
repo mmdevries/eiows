@@ -37,6 +37,7 @@ namespace eioWS {
                 unsigned int spillLength : 4;
                 int opStack : 2; // -1, 0, 1
                 unsigned int lastFin : 1;
+                unsigned int fragmentedMessage : 1;
 
                 // 15 bytes
                 unsigned char spill[LONG_MESSAGE_HEADER - 1] = { 0 };
@@ -47,6 +48,7 @@ namespace eioWS {
                     spillLength = 0;
                     opStack = -1;
                     lastFin = true;
+                    fragmentedMessage = false;
                 }
 
             } state;
@@ -190,17 +192,36 @@ namespace eioWS {
         }
 
         static inline bool consumeMessage(uint64_t payLength, unsigned int messageHeader, char *&src, unsigned int &length, WebSocketState *wState, const WebSocketProtocolHooks &hooks) {
-            if (getOpCode(src)) {
-                if (wState->state.opStack == 1 || (!wState->state.lastFin && getOpCode(src) < 3)) {
+            const unsigned char opCode = getOpCode(src);
+            const bool fin = isFin(src);
+
+            if (opCode == TEXT || opCode == BINARY) {
+                if (wState->state.fragmentedMessage) {
                     hooks.forceClose(wState);
                     return true;
                 }
-                wState->state.opCode[++wState->state.opStack] = (OpCode) getOpCode(src);
+                wState->state.fragmentedMessage = !fin;
+            } else if (opCode == NONE) {
+                if (!wState->state.fragmentedMessage) {
+                    hooks.forceClose(wState);
+                    return true;
+                }
+                if (fin) {
+                    wState->state.fragmentedMessage = false;
+                }
+            }
+
+            if (opCode) {
+                if (wState->state.opStack == 1) {
+                    hooks.forceClose(wState);
+                    return true;
+                }
+                wState->state.opCode[++wState->state.opStack] = static_cast<OpCode>(opCode);
             } else if (wState->state.opStack == -1) {
                 hooks.forceClose(wState);
                 return true;
             }
-            wState->state.lastFin = isFin(src);
+            wState->state.lastFin = fin;
 
             if (hooks.refusePayloadLength(payLength, wState)) {
                 hooks.forceClose(wState);
@@ -226,7 +247,6 @@ namespace eioWS {
             wState->state.spillLength = 0;
             wState->state.wantsHead = false;
             wState->remainingBytes = (unsigned int) (payLength - length + messageHeader);
-            bool fin = isFin(src);
             memcpy(wState->mask, src + messageHeader - 4, 4);
             unmaskImprecise(src, src + messageHeader, wState->mask, length - messageHeader);
             rotateMask(4 - ((length - messageHeader) & 3), wState->mask);

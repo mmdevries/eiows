@@ -43,16 +43,34 @@ export class Server extends EventEmitter {
     close(callback?: () => void): void;
 }
 
-export const native: any;
-export let compressThreshold: number;
-export let PERMESSAGE_DEFLATE: number;
-export let SERVER_NO_CONTEXT_TAKEOVER: number;
-export let CLIENT_NO_CONTEXT_TAKEOVER: number;
-export let SLIDING_DEFLATE_WINDOW: number;
-export let CONNECTING: number;
-export let OPCODE_TEXT: number;
-export let OPCODE_BINARY: number;
-export let OPCODE_PING: number;
-export let OPEN: number;
-export let CLOSING: number;
-export let CLOSED: number;
+export const compressThreshold: number;
+export const PERMESSAGE_DEFLATE: number;
+export const SERVER_NO_CONTEXT_TAKEOVER: number;
+export const CLIENT_NO_CONTEXT_TAKEOVER: number;
+export const SLIDING_DEFLATE_WINDOW: number;
+export const CONNECTING: number;
+export const OPCODE_TEXT: number;
+export const OPCODE_BINARY: number;
+export const OPCODE_PING: number;
+export const OPEN: number;
+export const CLOSING: number;
+export const CLOSED: number;
+
+declare const eiows: {
+    WebSocket: typeof WebSocket;
+    Server: typeof Server;
+    compressThreshold: number;
+    readonly PERMESSAGE_DEFLATE: number;
+    readonly SERVER_NO_CONTEXT_TAKEOVER: number;
+    readonly CLIENT_NO_CONTEXT_TAKEOVER: number;
+    readonly SLIDING_DEFLATE_WINDOW: number;
+    readonly CONNECTING: number;
+    readonly OPCODE_TEXT: number;
+    readonly OPCODE_BINARY: number;
+    readonly OPCODE_PING: number;
+    readonly OPEN: number;
+    readonly CLOSING: number;
+    readonly CLOSED: number;
+};
+
+export default eiows;

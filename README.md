@@ -3,6 +3,8 @@ This package is mainly meant for projects that want eiows as a high-performance 
 
 Starting with eiows 10, Node.js remains the owner of the underlying TCP or TLS stream. The native addon handles WebSocket framing, validation and compression through the stable Node-API. No Node.js source download or modification is required during installation.
 
+eiows 10 exposes only the supported JavaScript API. The low-level native binding that older releases exposed as `eiows.native` is no longer public; native session handles are implementation details and cannot be used safely across API boundaries.
+
 When `perMessageDeflate` is disabled, eiows also supports Engine.IO's `_sender.sendFrame()` fast path. Socket.IO can use this to reuse a single pre-encoded WebSocket frame for eligible text broadcasts, including room broadcasts, instead of framing and copying the payload separately for every recipient.
 This module only runs on Linux/FreeBSD/macOS.
 

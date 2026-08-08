@@ -11,6 +11,15 @@
 
 namespace {
 
+const napi_type_tag SESSION_TYPE_TAG = {
+    0x2c430f425d4c4f13ULL,
+    0xa72e6289c930ebeaULL
+};
+const napi_type_tag COMPRESSION_CONTEXT_TYPE_TAG = {
+    0x81191992c4fb4c82ULL,
+    0xb023f25228dbf0e1ULL
+};
+
 struct SessionHandle {
     explicit SessionHandle(std::unique_ptr<eioWS::StreamWebSocket> value) :
         session(std::move(value)) {}
@@ -208,7 +217,22 @@ void finalizeCompressionContext(napi_env, void *data, void *) {
     delete static_cast<CompressionContextHandle *>(data);
 }
 
+bool hasTypeTag(napi_env env,
+                napi_value value,
+                const napi_type_tag *tag,
+                const char *expected) {
+    bool matches = false;
+    if (napi_check_object_type_tag(env, value, tag, &matches) != napi_ok || !matches) {
+        napi_throw_type_error(env, nullptr, expected);
+        return false;
+    }
+    return true;
+}
+
 SessionHandle *getSession(napi_env env, napi_value value) {
+    if (!hasTypeTag(env, value, &SESSION_TYPE_TAG, "expected a native WebSocket session")) {
+        return nullptr;
+    }
     void *data = nullptr;
     if (!checkStatus(env,
                      napi_get_value_external(env, value, &data),
@@ -224,6 +248,12 @@ SessionHandle *getSession(napi_env env, napi_value value) {
 }
 
 CompressionContextHandle *getCompressionContext(napi_env env, napi_value value) {
+    if (!hasTypeTag(env,
+                    value,
+                    &COMPRESSION_CONTEXT_TYPE_TAG,
+                    "expected a native compression context")) {
+        return nullptr;
+    }
     void *data = nullptr;
     if (!checkStatus(env,
                      napi_get_value_external(env, value, &data),
@@ -344,6 +374,11 @@ napi_value createCompressionContext(napi_env env, napi_callback_info) {
         delete handle;
         return nullptr;
     }
+    if (!checkStatus(env,
+                     napi_type_tag_object(env, external, &COMPRESSION_CONTEXT_TYPE_TAG),
+                     "failed to tag compression context")) {
+        return nullptr;
+    }
     return external;
 }
 
@@ -398,6 +433,11 @@ napi_value createSession(napi_env env, napi_callback_info info) {
                          env, handle, finalizeSession, nullptr, &external),
                      "failed to create WebSocket session")) {
         delete handle;
+        return nullptr;
+    }
+    if (!checkStatus(env,
+                     napi_type_tag_object(env, external, &SESSION_TYPE_TAG),
+                     "failed to tag WebSocket session")) {
         return nullptr;
     }
 
@@ -542,6 +582,12 @@ napi_value createCloseFrame(napi_env env, napi_callback_info info) {
 napi_value dispose(napi_env env, napi_callback_info info) {
     std::vector<napi_value> args;
     if (!getArguments(env, info, 1, args)) {
+        return nullptr;
+    }
+    if (!hasTypeTag(env,
+                    args[0],
+                    &SESSION_TYPE_TAG,
+                    "expected a native WebSocket session")) {
         return nullptr;
     }
     void *data = nullptr;
