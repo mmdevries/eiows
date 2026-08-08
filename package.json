@@ -1,6 +1,6 @@
 {
   "name": "eiows",
-  "version": "9.2.0",
+  "version": "10.0.0",
   "description": "high-performance Node.js WebSocket engine for Socket.IO",
   "license": "MIT",
   "main": "./dist/eiows.js",
@@ -14,13 +14,27 @@
     },
     "./package.json": "./package.json"
   },
+  "files": [
+    "binding.gyp",
+    "dist/eiows.js",
+    "dist/eiows.d.ts",
+    "dist/wrapper.mjs",
+    "nodejs/LICENSE",
+    "nodejs/src/addon.cpp",
+    "uWebSockets/LICENSE",
+    "uWebSockets/src/Extensions.cpp",
+    "uWebSockets/src/Extensions.h",
+    "uWebSockets/src/StreamWebSocket.cpp",
+    "uWebSockets/src/StreamWebSocket.h",
+    "uWebSockets/src/WebSocketProtocol.h"
+  ],
   "scripts": {
-    "preinstall": "make",
+    "build": "node-gyp rebuild",
     "install": "node-gyp rebuild > build_log.txt 2>&1",
-    "postinstall": "make clean"
+    "test": "node --test test/*.test.js"
   },
   "engines": {
-    "node": ">=16 <27.0"
+    "node": ">=16"
   },
   "keywords": [
     "websocket",

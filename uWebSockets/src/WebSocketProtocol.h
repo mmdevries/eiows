@@ -128,17 +128,20 @@ namespace eioWS {
 
         static inline void unmaskImprecise(char *dst, char *src, char *mask, unsigned int length) {
 #ifdef EIOWS_USE_AVX2
-            unsigned int roundedLength = ((length >> 2) + 1) << 2;
-            if (roundedLength >= AVX2_UNMASK_MIN_LENGTH && hasAvx2()) {
-                unmaskAvx2(dst, src, mask, roundedLength);
+            if (length >= AVX2_UNMASK_MIN_LENGTH && hasAvx2()) {
+                unmaskAvx2(dst, src, mask, length);
                 return;
             }
 #endif
-            for (unsigned int n = (length >> 2) + 1; n; n--) {
+            while (length >= 4) {
                 *(dst++) = *(src++) ^ mask[0];
                 *(dst++) = *(src++) ^ mask[1];
                 *(dst++) = *(src++) ^ mask[2];
                 *(dst++) = *(src++) ^ mask[3];
+                length -= 4;
+            }
+            for (unsigned int index = 0; index < length; index++) {
+                *(dst++) = *(src++) ^ mask[index];
             }
         }
 
@@ -163,11 +166,14 @@ namespace eioWS {
                 return;
             }
 #endif
-            while (data < stop) {
+            while (stop - data >= 4) {
                 *(data++) ^= mask[0];
                 *(data++) ^= mask[1];
                 *(data++) ^= mask[2];
                 *(data++) ^= mask[3];
+            }
+            for (unsigned int index = 0; data < stop; index++) {
+                *(data++) ^= mask[index];
             }
         }
 
@@ -185,7 +191,7 @@ namespace eioWS {
 
         static inline bool consumeMessage(uint64_t payLength, unsigned int messageHeader, char *&src, unsigned int &length, WebSocketState *wState, const WebSocketProtocolHooks &hooks) {
             if (getOpCode(src)) {
-                if (wState->state.opStack == 1 || (!wState->state.lastFin && getOpCode(src) < 2)) {
+                if (wState->state.opStack == 1 || (!wState->state.lastFin && getOpCode(src) < 3)) {
                     hooks.forceClose(wState);
                     return true;
                 }
@@ -250,7 +256,7 @@ namespace eioWS {
                 return true;
             }
 
-            unmaskInplace(src, src + ((length >> 2) + 1) * 4, wState->mask);
+            unmaskInplace(src, src + length, wState->mask);
 
             wState->remainingBytes -= length;
             if (hooks.handleFragment(src, length, wState->remainingBytes, wState->state.opCode[wState->state.opStack], wState->state.lastFin, wState)) {
@@ -281,7 +287,11 @@ namespace eioWS {
                 const bool useAvx2Ascii = length >= AVX2_UTF8_ASCII_MIN_LENGTH && hasAvx2();
 #endif
                 for (unsigned char *e = s + length; s != e; ) {
-                    if (s + 4 <= e && ((*reinterpret_cast<uint32_t *>(s)) & 0x80808080) == 0) {
+                    uint32_t asciiWord = 0;
+                    if (s + 4 <= e) {
+                        memcpy(&asciiWord, s, sizeof(asciiWord));
+                    }
+                    if (s + 4 <= e && (asciiWord & 0x80808080) == 0) {
 #ifdef EIOWS_USE_AVX2
                         if (useAvx2Ascii) {
                             s = skipAsciiAvx2(s, e);
@@ -335,8 +345,12 @@ namespace eioWS {
 
                 if (length >= 2) {
                     cf = {readUint16BE(src), src + 2, length - 2};
-                    if (cf.code < 1000 || cf.code > 4999 || (cf.code > 1011 && cf.code < 4000) ||
-                        (cf.code >= 1004 && cf.code <= 1006) || !isValidUtf8((unsigned char *) cf.message, cf.length)) {
+                    const bool validCode =
+                        (cf.code >= 1000 && cf.code <= 1014 &&
+                         cf.code != 1004 && cf.code != 1005 && cf.code != 1006) ||
+                        (cf.code >= 3000 && cf.code <= 4999);
+                    if (!validCode ||
+                        !isValidUtf8((unsigned char *) cf.message, cf.length)) {
                         return {1006, "", 0};
                     }
                 }
