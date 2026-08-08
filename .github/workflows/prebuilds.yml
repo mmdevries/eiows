@@ -1,14 +1,61 @@
 name: Prebuilds
+run-name: Prebuild ${{ inputs.release_tag }}
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to build (for example 10.0.0 or v10.0.0)
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-24.04
+    outputs:
+      release_sha: ${{ steps.release.outputs.release_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Match tag, commit and package version
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if ! git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"; then
+            echo "${RELEASE_TAG} is not a tag" >&2
+            exit 1
+          fi
+
+          package_version="$(node -p "require('./package.json').version")"
+          tag_version="${RELEASE_TAG#v}"
+          if [ "$tag_version" != "$package_version" ]; then
+            echo "tag ${RELEASE_TAG} does not match package version ${package_version}" >&2
+            exit 1
+          fi
+
+          release_sha="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          head_sha="$(git rev-parse HEAD)"
+          if [ "$release_sha" != "$head_sha" ]; then
+            echo "checked-out commit ${head_sha} does not match tag commit ${release_sha}" >&2
+            exit 1
+          fi
+
+          echo "release_sha=${release_sha}" >> "$GITHUB_OUTPUT"
+
   linux:
     name: Linux ${{ matrix.arch }} / ${{ matrix.libc }}
+    needs: validate
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -36,6 +83,8 @@ jobs:
             prepare: apk add --no-cache g++ make python3 zlib-dev
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.release_sha }}
       - name: Build and verify prebuild
         env:
           IMAGE: ${{ matrix.image }}
@@ -55,6 +104,7 @@ jobs:
 
   macos:
     name: macOS ${{ matrix.arch }}
+    needs: validate
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -66,6 +116,8 @@ jobs:
             runner: macos-14
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.release_sha }}
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -82,6 +134,7 @@ jobs:
 
   freebsd:
     name: FreeBSD ${{ matrix.node_arch }}
+    needs: validate
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -93,6 +146,8 @@ jobs:
             node_arch: arm64
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.release_sha }}
       - name: Build and verify prebuild
         uses: vmactions/freebsd-vm@v1
         with:
@@ -112,10 +167,12 @@ jobs:
 
   package:
     name: Assemble npm package
-    needs: [linux, macos, freebsd]
+    needs: [validate, linux, macos, freebsd]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.release_sha }}
       - uses: actions/setup-node@v7
         with:
           node-version: 24
