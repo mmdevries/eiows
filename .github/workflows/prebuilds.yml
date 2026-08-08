@@ -1,17 +1,7 @@
 name: Prebuilds
 
 on:
-  push:
-    tags:
-      - "[0-9]+.[0-9]+.[0-9]+"
-      - "v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
-    inputs:
-      publish:
-        description: Publish the assembled package to npm
-        required: true
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -192,28 +182,3 @@ jobs:
             --workdir /package \
             "node:${{ matrix.node }}-${{ matrix.image_suffix }}" \
             sh -c 'mkdir smoke && cd smoke && npm init -y >/dev/null && npm install --ignore-scripts ../eiows-*.tgz && node -e "(async () => { const cjs = require(\"eiows\"); const esm = await import(\"eiows\"); if (typeof cjs.Server !== \"function\" || esm.Server !== cjs.Server || esm.default !== cjs || \"native\" in cjs) throw new Error(\"invalid public module API\"); })()"'
-
-  publish:
-    name: Publish to npm
-    needs: verify-node
-    if: github.event_name == 'push' || inputs.publish
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
-          package-manager-cache: false
-      - uses: actions/download-artifact@v8
-        with:
-          name: npm-package
-      - name: Verify release tag
-        if: github.event_name == 'push'
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: node -e "const expected = require('./package.json').version; const actual = process.env.RELEASE_TAG.replace(/^v/, ''); if (actual !== expected) throw new Error('tag ' + actual + ' does not match package version ' + expected)"
-      - run: npm publish eiows-*.tgz --access public --provenance
