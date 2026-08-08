@@ -90,7 +90,7 @@ jobs:
             --workdir /workspace \
             --env PREPARE \
             "$IMAGE" \
-            sh -c '$PREPARE && npm ci --ignore-scripts && npm run prebuildify -- --tag-libc && PREBUILDS_ONLY=1 npm test'
+            sh -c 'sh -c "$PREPARE" && npm ci --ignore-scripts && npm run prebuildify -- --tag-libc && PREBUILDS_ONLY=1 npm test'
       - uses: actions/upload-artifact@v7
         with:
           name: prebuild-linux-${{ matrix.arch }}-${{ matrix.libc }}
