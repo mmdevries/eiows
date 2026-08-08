@@ -223,7 +223,7 @@ namespace eioWS {
             }
             wState->state.lastFin = fin;
 
-            if (hooks.refusePayloadLength(payLength, wState)) {
+            if (opCode <= BINARY && hooks.refusePayloadLength(payLength, wState)) {
                 hooks.forceClose(wState);
                 return true;
             }

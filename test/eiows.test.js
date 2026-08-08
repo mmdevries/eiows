@@ -593,6 +593,43 @@ test('allows a control frame at the fragmented message payload limit', () => {
     native.dispose(session);
 });
 
+test('does not apply maxPayload to control frames', () => {
+    const controlPayload = 'health';
+
+    const [pingSession] = native.createSession(0, 4, '');
+    const pingEvents = native.consume(
+        pingSession,
+        clientFrame(controlPayload, { opCode: 9 })
+    );
+    assert.equal(pingEvents.length, 1);
+    const pong = parseServerFrame(pingEvents[0][1]);
+    assert.equal(pong.opCode, 10);
+    assert.equal(pong.payload.toString(), controlPayload);
+    native.dispose(pingSession);
+
+    const [pongSession] = native.createSession(0, 4, '');
+    assert.deepEqual(
+        native.consume(pongSession, clientFrame(controlPayload, { opCode: 10 })),
+        []
+    );
+    native.dispose(pongSession);
+
+    const closePayload = Buffer.alloc(5);
+    closePayload.writeUInt16BE(1000, 0);
+    closePayload.write('bye', 2);
+    const [closeSession] = native.createSession(0, 4, '');
+    const closeEvents = native.consume(
+        closeSession,
+        clientFrame(closePayload, { opCode: 8 })
+    );
+    const close = parseServerFrame(closeEvents[0][1]);
+    assert.equal(close.opCode, 8);
+    assert.equal(close.payload.readUInt16BE(0), 1000);
+    assert.equal(close.payload.subarray(2).toString(), 'bye');
+    assert.deepEqual(closeEvents[1], [2, 1000, 'bye']);
+    native.dispose(closeSession);
+});
+
 test('waits for the peer close after initiating the close handshake', () => {
     const [session] = native.createSession(0, 1024, '');
     const closeFrame = native.closeFrame(session, 1000, Buffer.from('done'));
