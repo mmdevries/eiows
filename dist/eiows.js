@@ -113,6 +113,7 @@ function abortConnection(socket, code, message) {
         'Connection: close\r\n' +
         'Content-Type: text/plain; charset=utf-8\r\n' +
         `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`;
+    socket.once('finish', () => socket.destroy());
     socket.end(response);
 }
 
@@ -418,6 +419,9 @@ class Server extends EventEmitter {
         this._clients = new Set();
         this._closing = false;
         this._closed = false;
+        this._compressionContext = this._compressEnabled
+            ? native.createCompressionContext()
+            : null;
 
         // Retained for source compatibility with previous eiows releases.
         this.serverGroup = this;
@@ -463,7 +467,8 @@ class Server extends EventEmitter {
             [external, extensions] = native.createSession(
                 this._nativeOptions,
                 this._maxPayload,
-                headerValue(request.headers['sec-websocket-extensions'])
+                headerValue(request.headers['sec-websocket-extensions']),
+                this._compressionContext
             );
         } catch (error) {
             abortConnection(socket, 500, 'Internal Server Error');
@@ -526,6 +531,7 @@ class Server extends EventEmitter {
         if (this._closed) return;
         this._closed = true;
         this.serverGroup = null;
+        this._compressionContext = null;
         this.emit('close');
     }
 

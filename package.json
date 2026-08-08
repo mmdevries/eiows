@@ -34,7 +34,7 @@
     "test": "node --test test/*.test.js"
   },
   "engines": {
-    "node": ">=16"
+    "node": ">=22"
   },
   "keywords": [
     "websocket",

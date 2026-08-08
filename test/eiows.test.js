@@ -139,6 +139,29 @@ class CapturingSocket extends EventEmitter {
     }
 }
 
+class RejectedUpgradeSocket extends EventEmitter {
+    constructor() {
+        super();
+        this.destroyed = false;
+        this.writable = true;
+        this.response = '';
+    }
+
+    write() {
+        return true;
+    }
+
+    end(response) {
+        this.response = response;
+        this.writable = false;
+        process.nextTick(() => this.emit('finish'));
+    }
+
+    destroy() {
+        this.destroyed = true;
+    }
+}
+
 async function runEchoCase(secure) {
     const server = secure ? https.createServer(tlsOptions) : http.createServer();
     const wsServer = new eiows.Server({ maxPayload: 1024 });
@@ -265,6 +288,69 @@ test('negotiates permessage-deflate and handles compressed client frames', async
     await closeServer(server);
 });
 
+test('only negotiates valid and supported permessage-deflate offers', () => {
+    const options = eiows.PERMESSAGE_DEFLATE |
+        eiows.CLIENT_NO_CONTEXT_TAKEOVER |
+        eiows.SERVER_NO_CONTEXT_TAKEOVER;
+    const context = eiows.native.createCompressionContext();
+    const negotiate = (offer) => {
+        const [session, response] = eiows.native.createSession(options, 1024, offer, context);
+        eiows.native.dispose(session);
+        return response;
+    };
+
+    assert.equal(negotiate('zzzzzzzzzzzzzzAA'), '');
+    assert.equal(negotiate('9'.repeat(4096)), '');
+    assert.equal(negotiate('permessage-deflate; server_max_window_bits=10'), '');
+    assert.equal(
+        negotiate('permessage-deflate; server_max_window_bits=10, permessage-deflate'),
+        'permessage-deflate; client_no_context_takeover; server_no_context_takeover'
+    );
+    assert.equal(
+        negotiate('permessage-deflate; client_no_context_takeover=invalid'),
+        ''
+    );
+});
+
+test('safely reuses no-context-takeover streams between sessions', () => {
+    const options = eiows.PERMESSAGE_DEFLATE |
+        eiows.CLIENT_NO_CONTEXT_TAKEOVER |
+        eiows.SERVER_NO_CONTEXT_TAKEOVER;
+    const context = eiows.native.createCompressionContext();
+    const [first] = eiows.native.createSession(options, 4096, 'permessage-deflate', context);
+    const [second] = eiows.native.createSession(options, 4096, 'permessage-deflate', context);
+    const payload = 'shared compression context '.repeat(40);
+    const compressed = zlib.deflateRawSync(payload, {
+        flush: zlib.constants.Z_SYNC_FLUSH,
+        finishFlush: zlib.constants.Z_SYNC_FLUSH
+    }).subarray(0, -4);
+
+    for (const session of [first, second]) {
+        assert.deepEqual(
+            eiows.native.consume(session, clientFrame(compressed, { compressed: true })),
+            [[0, payload, false]]
+        );
+        const frame = parseServerFrame(eiows.native.frame(session, payload, 1, true));
+        const inflated = zlib.inflateRawSync(Buffer.concat([
+            frame.payload,
+            Buffer.from([0x00, 0x00, 0xff, 0xff])
+        ]), { finishFlush: zlib.constants.Z_SYNC_FLUSH });
+        assert.equal(inflated.toString(), payload);
+        eiows.native.dispose(session);
+    }
+});
+
+test('destroys rejected upgrade sockets after flushing the response', async () => {
+    const wsServer = new eiows.Server({});
+    const socket = new RejectedUpgradeSocket();
+    wsServer.handleUpgrade({ method: 'POST', headers: {} }, socket, Buffer.alloc(0), () => {});
+
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.match(socket.response, /^HTTP\/1\.1 400 Bad Request/);
+    assert.equal(socket.destroyed, true);
+    await new Promise((resolve) => wsServer.close(resolve));
+});
+
 test('rejects unmasked client frames with a protocol close', () => {
     const [session] = eiows.native.createSession(0, 1024, '');
     const events = eiows.native.consume(session, Buffer.from([0x81, 0x04, 0x74, 0x65, 0x73, 0x74]));
@@ -323,6 +409,28 @@ test('enforces maxPayload and treats zero as unlimited', () => {
         [[0, '12345', false]]
     );
     eiows.native.dispose(unlimitedSession);
+});
+
+test('uses close code 1009 when inflated data exceeds maxPayload', () => {
+    const payload = 'a'.repeat(1000);
+    const compressed = zlib.deflateRawSync(payload, {
+        flush: zlib.constants.Z_SYNC_FLUSH,
+        finishFlush: zlib.constants.Z_SYNC_FLUSH
+    }).subarray(0, -4);
+    const [session] = eiows.native.createSession(
+        eiows.PERMESSAGE_DEFLATE,
+        32,
+        'permessage-deflate'
+    );
+    const events = eiows.native.consume(
+        session,
+        clientFrame(compressed, { compressed: true })
+    );
+
+    assert.equal(events[0][0], 1);
+    assert.equal(parseServerFrame(events[0][1]).payload.readUInt16BE(0), 1009);
+    assert.deepEqual(events[1], [2, 1006, '']);
+    eiows.native.dispose(session);
 });
 
 test('echoes a valid close frame and reports its code and reason', () => {
@@ -418,4 +526,30 @@ test('writes uncompressed frames without copying their payload', async () => {
     const closed = new Promise((resolve) => webSocket.once('close', resolve));
     webSocket.terminate();
     await closed;
+});
+
+test('does not allocate zlib streams for every idle compression session', () => {
+    const context = eiows.native.createCompressionContext();
+    const options = eiows.PERMESSAGE_DEFLATE |
+        eiows.CLIENT_NO_CONTEXT_TAKEOVER |
+        eiows.SERVER_NO_CONTEXT_TAKEOVER;
+    const sessions = [];
+    const before = process.memoryUsage().rss;
+
+    for (let index = 0; index < 2000; index++) {
+        const [session] = eiows.native.createSession(
+            options,
+            1024,
+            'permessage-deflate',
+            context
+        );
+        sessions.push(session);
+    }
+
+    const increase = process.memoryUsage().rss - before;
+    for (const session of sessions) eiows.native.dispose(session);
+    assert.ok(
+        increase < 64 * 1024 * 1024,
+        `idle compression sessions increased RSS by ${Math.round(increase / 1024 / 1024)} MiB`
+    );
 });

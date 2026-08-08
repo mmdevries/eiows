@@ -1,5 +1,5 @@
 eiows is a replacement module for ws which allows, but doesn't guarantee, significant performance and memory-usage improvements. This module is specifically only compatible with Node.js.
-This package is mainly meant for projects that want eiows as a high-performance `ws` replacement. It requires engine.io 3.4.2 or higher and supports Node.js 16 and newer. A C++17 compiler is required when installing from source.
+This package is mainly meant for projects that want eiows as a high-performance `ws` replacement. It requires engine.io 3.4.2 or higher and supports Node.js 22 and newer. A C++17 compiler and zlib development headers are required when installing from source.
 
 Starting with eiows 10, Node.js remains the owner of the underlying TCP or TLS stream. The native addon handles WebSocket framing, validation and compression through the stable Node-API. No Node.js source download or modification is required during installation.
 

@@ -18,6 +18,13 @@ struct SessionHandle {
     std::unique_ptr<eioWS::StreamWebSocket> session;
 };
 
+struct CompressionContextHandle {
+    CompressionContextHandle() :
+        context(std::make_shared<eioWS::CompressionContext>()) {}
+
+    std::shared_ptr<eioWS::CompressionContext> context;
+};
+
 struct NativeInput {
     char *data = nullptr;
     size_t length = 0;
@@ -38,19 +45,21 @@ bool checkStatus(napi_env env, napi_status status, const char *fallback) {
 
 bool getArguments(napi_env env,
                   napi_callback_info info,
-                  size_t expected,
-                  std::vector<napi_value> &arguments) {
-    arguments.resize(expected);
-    size_t count = expected;
+                  size_t capacity,
+                  std::vector<napi_value> &arguments,
+                  size_t minimum = 0) {
+    arguments.resize(capacity);
+    size_t count = capacity;
     if (!checkStatus(env,
                      napi_get_cb_info(env, info, &count, arguments.data(), nullptr, nullptr),
                      "failed to read native arguments")) {
         return false;
     }
-    if (count < expected) {
+    if (count < (minimum ? minimum : capacity)) {
         napi_throw_type_error(env, nullptr, "not enough arguments");
         return false;
     }
+    arguments.resize(count);
     return true;
 }
 
@@ -195,6 +204,10 @@ void finalizeSession(napi_env, void *data, void *) {
     delete static_cast<SessionHandle *>(data);
 }
 
+void finalizeCompressionContext(napi_env, void *data, void *) {
+    delete static_cast<CompressionContextHandle *>(data);
+}
+
 SessionHandle *getSession(napi_env env, napi_value value) {
     void *data = nullptr;
     if (!checkStatus(env,
@@ -205,6 +218,21 @@ SessionHandle *getSession(napi_env env, napi_value value) {
     SessionHandle *handle = static_cast<SessionHandle *>(data);
     if (!handle || !handle->session) {
         napi_throw_error(env, nullptr, "WebSocket session is closed");
+        return nullptr;
+    }
+    return handle;
+}
+
+CompressionContextHandle *getCompressionContext(napi_env env, napi_value value) {
+    void *data = nullptr;
+    if (!checkStatus(env,
+                     napi_get_value_external(env, value, &data),
+                     "expected a native compression context")) {
+        return nullptr;
+    }
+    CompressionContextHandle *handle = static_cast<CompressionContextHandle *>(data);
+    if (!handle || !handle->context) {
+        napi_throw_error(env, nullptr, "compression context is closed");
         return nullptr;
     }
     return handle;
@@ -306,9 +334,22 @@ napi_value createString(napi_env env, const std::string &data) {
     return createString(env, data.data(), data.size());
 }
 
+napi_value createCompressionContext(napi_env env, napi_callback_info) {
+    auto *handle = new CompressionContextHandle();
+    napi_value external = nullptr;
+    if (!checkStatus(env,
+                     napi_create_external(
+                         env, handle, finalizeCompressionContext, nullptr, &external),
+                     "failed to create compression context")) {
+        delete handle;
+        return nullptr;
+    }
+    return external;
+}
+
 napi_value createSession(napi_env env, napi_callback_info info) {
     std::vector<napi_value> args;
-    if (!getArguments(env, info, 3, args)) {
+    if (!getArguments(env, info, 4, args, 3)) {
         return nullptr;
     }
 
@@ -325,36 +366,50 @@ napi_value createSession(napi_env env, napi_callback_info info) {
         return nullptr;
     }
 
-    try {
-        eioWS::ExtensionsNegotiator negotiator(wantedOptions);
-        negotiator.readOffer(extensionOffer);
-        const int negotiatedOptions = negotiator.getNegotiatedOptions();
-        auto session = std::make_unique<eioWS::StreamWebSocket>(
-            negotiatedOptions, static_cast<uint32_t>(maxPayload));
-        auto *handle = new SessionHandle(std::move(session));
+    eioWS::ExtensionsNegotiator negotiator(wantedOptions);
+    negotiator.readOffer(extensionOffer);
+    const int negotiatedOptions = negotiator.getNegotiatedOptions();
 
-        napi_value external = nullptr;
-        if (!checkStatus(env,
-                         napi_create_external(
-                             env, handle, finalizeSession, nullptr, &external),
-                         "failed to create WebSocket session")) {
-            delete handle;
+    std::shared_ptr<eioWS::CompressionContext> compressionContext;
+    if (args.size() == 4) {
+        napi_valuetype type;
+        if (!checkStatus(env, napi_typeof(env, args[3], &type), "failed to inspect compression context")) {
             return nullptr;
         }
-
-        napi_value result = nullptr;
-        napi_value extensionResponse = createString(env, negotiator.generateOffer());
-        if (!extensionResponse ||
-            !checkStatus(env, napi_create_array_with_length(env, 2, &result), "failed to create result") ||
-            !checkStatus(env, napi_set_element(env, result, 0, external), "failed to set session") ||
-            !checkStatus(env, napi_set_element(env, result, 1, extensionResponse), "failed to set extensions")) {
-            return nullptr;
+        if (type != napi_undefined && type != napi_null) {
+            CompressionContextHandle *contextHandle = getCompressionContext(env, args[3]);
+            if (!contextHandle) {
+                return nullptr;
+            }
+            compressionContext = contextHandle->context;
         }
-        return result;
-    } catch (const std::exception &error) {
-        napi_throw_error(env, nullptr, error.what());
+    }
+    if (!compressionContext && (negotiatedOptions & eioWS::PERMESSAGE_DEFLATE)) {
+        compressionContext = std::make_shared<eioWS::CompressionContext>();
+    }
+
+    auto session = std::make_unique<eioWS::StreamWebSocket>(
+        negotiatedOptions, static_cast<uint32_t>(maxPayload), compressionContext);
+    auto *handle = new SessionHandle(std::move(session));
+
+    napi_value external = nullptr;
+    if (!checkStatus(env,
+                     napi_create_external(
+                         env, handle, finalizeSession, nullptr, &external),
+                     "failed to create WebSocket session")) {
+        delete handle;
         return nullptr;
     }
+
+    napi_value result = nullptr;
+    napi_value extensionResponse = createString(env, negotiator.generateOffer());
+    if (!extensionResponse ||
+        !checkStatus(env, napi_create_array_with_length(env, 2, &result), "failed to create result") ||
+        !checkStatus(env, napi_set_element(env, result, 0, external), "failed to set session") ||
+        !checkStatus(env, napi_set_element(env, result, 1, extensionResponse), "failed to set extensions")) {
+        return nullptr;
+    }
+    return result;
 }
 
 napi_value consume(napi_env env, napi_callback_info info) {
@@ -506,13 +561,28 @@ napi_value dispose(napi_env env, napi_callback_info info) {
     return undefined;
 }
 
+template <napi_value (*Callback)(napi_env, napi_callback_info)>
+napi_value guardedCallback(napi_env env, napi_callback_info info) {
+    try {
+        return Callback(env, info);
+    } catch (const std::bad_alloc &) {
+        napi_throw_error(env, nullptr, "native WebSocket allocation failed");
+    } catch (const std::exception &error) {
+        napi_throw_error(env, nullptr, error.what());
+    } catch (...) {
+        napi_throw_error(env, nullptr, "unknown native WebSocket failure");
+    }
+    return nullptr;
+}
+
 napi_value initialize(napi_env env, napi_value exports) {
     const napi_property_descriptor properties[] = {
-        {"createSession", nullptr, createSession, nullptr, nullptr, nullptr, napi_default, nullptr},
-        {"consume", nullptr, consume, nullptr, nullptr, nullptr, napi_default, nullptr},
-        {"frame", nullptr, createFrame, nullptr, nullptr, nullptr, napi_default, nullptr},
-        {"closeFrame", nullptr, createCloseFrame, nullptr, nullptr, nullptr, napi_default, nullptr},
-        {"dispose", nullptr, dispose, nullptr, nullptr, nullptr, napi_default, nullptr}
+        {"createCompressionContext", nullptr, guardedCallback<createCompressionContext>, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"createSession", nullptr, guardedCallback<createSession>, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"consume", nullptr, guardedCallback<consume>, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"frame", nullptr, guardedCallback<createFrame>, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"closeFrame", nullptr, guardedCallback<createCloseFrame>, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"dispose", nullptr, guardedCallback<dispose>, nullptr, nullptr, nullptr, napi_default, nullptr}
     };
     if (!checkStatus(env,
                      napi_define_properties(
