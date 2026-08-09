@@ -10,6 +10,7 @@ const path = require('node:path');
 const tls = require('node:tls');
 const test = require('node:test');
 const zlib = require('node:zlib');
+const { Server: EngineIo } = require('engine.io');
 
 const eiows = require('..');
 const native = require('node-gyp-build')(path.join(__dirname, '..'));
@@ -51,11 +52,11 @@ function parseServerFrame(buffer) {
     let payloadLength = buffer[1] & 0x7f;
     let offset = 2;
     if (payloadLength === 126) {
-        assert.ok(buffer.length >= 4, 'incomplete 16-bit frame header');
+        if (buffer.length < 4) return null;
         payloadLength = buffer.readUInt16BE(2);
         offset = 4;
     } else if (payloadLength === 127) {
-        assert.ok(buffer.length >= 10, 'incomplete 64-bit frame header');
+        if (buffer.length < 10) return null;
         payloadLength = Number(buffer.readBigUInt64BE(2));
         offset = 10;
     }
@@ -104,6 +105,54 @@ function websocketRequest(extraHeaders = '') {
         'Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==\r\n' +
         extraHeaders +
         '\r\n';
+}
+
+function createServerFrameReader(socket) {
+    let buffer = Buffer.alloc(0);
+    let upgraded = false;
+    const frames = [];
+    const waiters = [];
+
+    const flush = () => {
+        if (!upgraded) {
+            const headerEnd = buffer.indexOf('\r\n\r\n');
+            if (headerEnd === -1) return;
+            buffer = buffer.subarray(headerEnd + 4);
+            upgraded = true;
+        }
+        for (;;) {
+            const frame = parseServerFrame(buffer);
+            if (!frame) break;
+            buffer = buffer.subarray(frame.consumed);
+            const waiter = waiters.shift();
+            if (waiter) waiter.resolve(frame);
+            else frames.push(frame);
+        }
+    };
+
+    socket.on('data', (chunk) => {
+        buffer = Buffer.concat([buffer, chunk]);
+        flush();
+    });
+
+    return function nextFrame(timeoutMs = 3000) {
+        if (frames.length) return Promise.resolve(frames.shift());
+        return new Promise((resolve, reject) => {
+            const waiter = {
+                resolve: (frame) => {
+                    clearTimeout(timeout);
+                    resolve(frame);
+                }
+            };
+            const timeout = setTimeout(() => {
+                const index = waiters.indexOf(waiter);
+                if (index !== -1) waiters.splice(index, 1);
+                reject(new Error('timed out waiting for WebSocket frame'));
+            }, timeoutMs);
+            waiters.push(waiter);
+            flush();
+        });
+    };
 }
 
 class CapturingSocket extends EventEmitter {
@@ -163,9 +212,9 @@ class RejectedUpgradeSocket extends EventEmitter {
     }
 }
 
-async function runEchoCase(secure) {
+async function runEchoCase(secure, textAsString = false) {
     const server = secure ? https.createServer(tlsOptions) : http.createServer();
-    const wsServer = new eiows.Server({ maxPayload: 1024 });
+    const wsServer = new eiows.Server({ maxPayload: 1024, textAsString });
     const messages = [];
     wsServer.on('headers', (headers) => headers.push('X-Eiows-Test: yes'));
     server.on('upgrade', (request, socket, head) => {
@@ -175,7 +224,7 @@ async function runEchoCase(secure) {
             webSocket.on('message', (message, isBinary) => {
                 messages.push([message, isBinary]);
                 if (secure) {
-                    webSocket.send(message);
+                    webSocket.send(message.toString());
                 } else {
                     const payload = Buffer.from(message);
                     webSocket._sender.sendFrame([
@@ -221,7 +270,7 @@ async function runEchoCase(secure) {
     assert.match(result.headers, /^X-Eiows-Test: yes$/m);
     assert.equal(result.frame.opCode, 1);
     assert.equal(result.frame.payload.toString(), 'hello');
-    assert.deepEqual(messages, [['hello', false]]);
+    assert.deepEqual(messages, [[textAsString ? 'hello' : Buffer.from('hello'), false]]);
 
     await destroySocket(socket);
     await new Promise((resolve) => wsServer.close(resolve));
@@ -230,6 +279,59 @@ async function runEchoCase(secure) {
 
 test('keeps the HTTP socket in Node and consumes upgradeHead', () => runEchoCase(false));
 test('keeps the TLS socket in Node without accessing SSLPointer', () => runEchoCase(true));
+test('can restore legacy string messages with textAsString', () => runEchoCase(false, true));
+
+test('Server defaults to ws-compatible Buffer text for Engine.IO', async () => {
+    const wsServer = new eiows.Server({ perMessageDeflate: false });
+
+    assert.equal(wsServer._textAsBuffer, true);
+    await new Promise((resolve) => wsServer.close(resolve));
+});
+
+test('integrates with Engine.IO and round-trips Unicode text', async () => {
+    const httpServer = http.createServer();
+    const engine = new EngineIo({
+        wsEngine: eiows.Server,
+        transports: ['websocket'],
+        perMessageDeflate: false,
+        maxHttpBufferSize: 30 * 1024
+    });
+    engine.attach(httpServer);
+    assert.ok(engine.ws instanceof eiows.Server);
+    assert.equal(engine.ws._textAsBuffer, true);
+
+    let receivedMessage;
+    engine.once('connection', (engineSocket) => {
+        engineSocket.once('message', (message) => {
+            receivedMessage = message;
+            engineSocket.send(`echo:${message}`);
+        });
+    });
+
+    const port = await listen(httpServer);
+    const socket = connect(port, false);
+    const nextFrame = createServerFrameReader(socket);
+    await new Promise((resolve, reject) => {
+        socket.once('connect', resolve);
+        socket.once('error', reject);
+    });
+    socket.write(websocketRequest());
+
+    const openFrame = await nextFrame();
+    assert.equal(openFrame.opCode, 1);
+    assert.equal(openFrame.payload[0], 0x30, 'expected an Engine.IO open packet');
+
+    const payload = 'café-東京-🙂';
+    socket.write(clientFrame(`4${payload}`));
+    const echoFrame = await nextFrame();
+    assert.equal(echoFrame.opCode, 1);
+    assert.equal(echoFrame.payload.toString(), `4echo:${payload}`);
+    assert.equal(receivedMessage, payload);
+
+    await destroySocket(socket);
+    engine.close();
+    await closeServer(httpServer);
+});
 
 test('exposes the same supported API through ESM and CommonJS', async () => {
     const esm = await import('../dist/wrapper.mjs');
@@ -432,6 +534,95 @@ test('parses a masked frame split at every possible byte boundary', () => {
         assert.deepEqual(events, [[0, expected, false]], `split at byte ${split}`);
         native.dispose(session);
     }
+});
+
+test('validates and unmasks large UTF-8 text on the SIMD path', () => {
+    const payload = `${'a'.repeat(70)}€${'b'.repeat(70)}😀${'c'.repeat(70)}`;
+    const [session] = native.createSession(0, Buffer.byteLength(payload), '');
+
+    assert.deepEqual(
+        native.consume(session, clientFrame(payload)),
+        [[0, payload, false]]
+    );
+    native.dispose(session);
+});
+
+test('unmasks payloads correctly around SIMD boundaries', () => {
+    const lengths = [1, 3, 4, 15, 16, 17, 63, 64, 65, 125, 126, 127, 255, 1024, 16384];
+    for (const length of lengths) {
+        const payload = Buffer.allocUnsafe(length);
+        for (let index = 0; index < length; index++) {
+            payload[index] = 0x20 + ((index * 29 + length) % 0x5f);
+        }
+        const [session] = native.createSession(0, length, '');
+        assert.deepEqual(
+            native.consume(session, clientFrame(payload, { opCode: 2 })),
+            [[0, payload, true]],
+            `incorrect unmask result for ${length} bytes`
+        );
+        native.dispose(session);
+    }
+});
+
+test('validates UTF-8 around SIMD boundaries', () => {
+    const offsets = [0, 15, 16, 17, 31, 32, 63, 64, 65, 79];
+    for (const offset of offsets) {
+        const validPayload = `${'a'.repeat(offset)}€${'b'.repeat(96)}`;
+        const [validSession] = native.createSession(0, Buffer.byteLength(validPayload), '');
+        assert.deepEqual(
+            native.consume(validSession, clientFrame(validPayload)),
+            [[0, validPayload, false]],
+            `valid UTF-8 rejected at byte ${offset}`
+        );
+        native.dispose(validSession);
+
+        const invalidPayload = Buffer.concat([
+            Buffer.alloc(offset, 0x61),
+            Buffer.from([0xc0, 0x80]),
+            Buffer.alloc(96, 0x62)
+        ]);
+        const [invalidSession] = native.createSession(0, invalidPayload.length, '');
+        const events = native.consume(invalidSession, clientFrame(invalidPayload));
+        assert.equal(events[0][0], 1, `invalid UTF-8 accepted at byte ${offset}`);
+        assert.deepEqual(events[1], [2, 1006, '']);
+        native.dispose(invalidSession);
+    }
+});
+
+test('rejects invalid UTF-8 after a large ASCII prefix', () => {
+    const payload = Buffer.concat([
+        Buffer.alloc(80, 0x61),
+        Buffer.from([0xc0, 0x80]),
+        Buffer.alloc(80, 0x62)
+    ]);
+    const [session] = native.createSession(0, payload.length, '');
+    const events = native.consume(session, clientFrame(payload));
+
+    assert.equal(events[0][0], 1);
+    const closeFrame = parseServerFrame(events[0][1]);
+    assert.equal(closeFrame.opCode, 8);
+    assert.equal(closeFrame.payload.readUInt16BE(0), 1007);
+    assert.deepEqual(events[1], [2, 1006, '']);
+    native.dispose(session);
+});
+
+test('releases native events without invalidating a fragmented binary message', () => {
+    const payload = Buffer.alloc(320 * 1024);
+    for (let index = 0; index < payload.length; index++) payload[index] = index & 0xff;
+    const frame = clientFrame(payload, { opCode: 2 });
+    const split = Math.floor(frame.length / 2);
+    const [session] = native.createSession(0, payload.length, '');
+
+    assert.deepEqual(native.consume(session, frame.subarray(0, split)), []);
+    const events = native.consume(session, frame.subarray(split));
+    assert.equal(events.length, 1);
+    assert.equal(events[0][0], 0);
+    assert.equal(events[0][2], true);
+    assert.deepEqual(events[0][1], payload);
+
+    native.consume(session, Buffer.alloc(0));
+    native.dispose(session);
+    assert.deepEqual(events[0][1], payload);
 });
 
 test('handles fragmented messages with an interleaved ping', () => {
@@ -658,14 +849,45 @@ test('writes uncompressed frames without copying their payload', async () => {
     assert.equal(socket.writes[0].readUInt16BE(2), 126);
     assert.equal(socket.writes[1], mediumText);
 
+    await new Promise((resolve, reject) => {
+        webSocket.send(mediumText, (error) => error ? reject(error) : resolve());
+    });
+    assert.strictEqual(socket.writes[2], socket.writes[0], 'expected cached text header');
+    assert.equal(socket.writes[3], mediumText);
+
     const largeBinary = Buffer.alloc(65536, 0x61);
     await new Promise((resolve, reject) => {
         webSocket.send(largeBinary, (error) => error ? reject(error) : resolve());
     });
-    assert.equal(socket.writes[2].length, 10);
-    assert.equal(socket.writes[2].readBigUInt64BE(2), 65536n);
-    assert.strictEqual(socket.writes[3], largeBinary);
-    assert.equal(socket.corkCount, 2);
+    assert.equal(socket.writes[4].length, 10);
+    assert.equal(socket.writes[4].readBigUInt64BE(2), 65536n);
+    assert.strictEqual(socket.writes[5], largeBinary);
+    assert.equal(socket.corkCount, 3);
+
+    const closed = new Promise((resolve) => webSocket.once('close', resolve));
+    webSocket.terminate();
+    await closed;
+});
+
+test('writes pre-encoded sendFrame parts without copying them', async () => {
+    const [session] = native.createSession(0, 1024, '');
+    const socket = new CapturingSocket();
+    const webSocket = new eiows.WebSocket(session, socket, null, false, 1024, '', '');
+    const header = Buffer.from([0x81, 0x05]);
+    const payload = Buffer.from('hello');
+
+    await new Promise((resolve, reject) => {
+        webSocket._sender.sendFrame([header, payload], (error) =>
+            error ? reject(error) : resolve());
+    });
+    assert.strictEqual(socket.writes[0], header);
+    assert.strictEqual(socket.writes[1], payload);
+    assert.equal(socket.corkCount, 1);
+
+    const error = await new Promise((resolve) => {
+        webSocket._sender.sendFrame([], resolve);
+    });
+    assert.match(error.message, /invalid pre-encoded frame/);
 
     const closed = new Promise((resolve) => webSocket.once('close', resolve));
     webSocket.terminate();

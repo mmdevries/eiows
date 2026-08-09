@@ -307,7 +307,6 @@ napi_value createBufferView(napi_env env,
     if (!isWithinSource) {
         return createBuffer(env, data, length);
     }
-
     napi_value subarray = nullptr;
     napi_value start = createUint32(env, static_cast<uint32_t>(dataAddress - sourceAddress));
     napi_value end = createUint32(
@@ -454,17 +453,24 @@ napi_value createSession(napi_env env, napi_callback_info info) {
 
 napi_value consume(napi_env env, napi_callback_info info) {
     std::vector<napi_value> args;
-    if (!getArguments(env, info, 2, args)) {
+    if (!getArguments(env, info, 3, args, 2)) {
         return nullptr;
     }
     SessionHandle *handle = getSession(env, args[0]);
     NativeInput input;
-    if (!handle || !getInput(env, args[1], input)) {
+    bool textAsBuffer = false;
+    if (!handle || !getInput(env, args[1], input) ||
+        (args.size() == 3 && !getBoolean(env, args[2], textAsBuffer))) {
         return nullptr;
     }
 
     std::vector<eioWS::StreamWebSocketEvent> &events =
         handle->session->consume(input.data, input.length);
+    struct ClearEventsOnReturn {
+        std::vector<eioWS::StreamWebSocketEvent> &events;
+        ~ClearEventsOnReturn() { events.clear(); }
+    } clearEventsOnReturn{events};
+
     napi_value result = nullptr;
     if (!checkStatus(env,
                      napi_create_array_with_length(env, events.size(), &result),
@@ -492,7 +498,7 @@ napi_value consume(napi_env env, napi_callback_info info) {
         }
 
         if (event.type == eioWS::StreamWebSocketEvent::Type::MESSAGE) {
-            napi_value message = event.opCode == eioWS::BINARY
+            napi_value message = event.opCode == eioWS::BINARY || textAsBuffer
                 ? createBufferView(
                     env, args[1], input, event.payloadData(), event.payloadLength())
                 : createString(env, event.payloadData(), event.payloadLength());
@@ -527,6 +533,8 @@ napi_value consume(napi_env env, napi_callback_info info) {
             return nullptr;
         }
     }
+    // All JS values now own or reference their payload. ClearEventsOnReturn
+    // releases native event storage immediately, including on N-API errors.
     return result;
 }
 

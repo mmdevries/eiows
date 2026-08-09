@@ -3,3 +3,5 @@
 /dist/eiows.node
 /node_modules/
 /prebuilds/
+/benchmark/node_modules/
+/benchmark/results/

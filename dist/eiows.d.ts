@@ -6,6 +6,25 @@ export interface SendOptions {
     compress?: boolean;
 }
 
+export interface PerMessageDeflateOptions {
+    threshold?: number;
+    clientNoContextTakeover?: boolean;
+    serverNoContextTakeover?: boolean;
+    [key: string]: unknown;
+}
+
+export interface ServerOptions {
+    maxPayload?: number;
+    noDelay?: boolean;
+    perMessageDeflate?: boolean | PerMessageDeflateOptions;
+    /**
+     * Restore the eiows 10.0.1 behavior of emitting text as a JavaScript
+     * string. By default text follows ws semantics: Buffer with isBinary false.
+     */
+    textAsString?: boolean;
+    [key: string]: unknown;
+}
+
 export class WebSocket extends EventEmitter {
     external: any;
     readonly CONNECTING: number;
@@ -33,12 +52,13 @@ export class WebSocket extends EventEmitter {
 }
 
 export class Server extends EventEmitter {
-    constructor(options: any);
+    constructor(options: ServerOptions);
     serverGroup: any;
     _pendingUpgradeCallbacks: Array<(socket: WebSocket, request?: any) => void>;
     _noDelay: boolean;
     _compressEnabled: boolean;
     _compressThreshold: number;
+    _textAsBuffer: boolean;
     handleUpgrade(request: any, socket: Duplex, upgradeHead: Buffer, callback: (socket: WebSocket, request?: any) => void): void;
     close(callback?: () => void): void;
 }

@@ -8,6 +8,18 @@ eiows 10 exposes only the supported JavaScript API. The low-level native binding
 When `perMessageDeflate` is disabled, eiows also supports Engine.IO's `_sender.sendFrame()` fast path. Socket.IO can use this to reuse a single pre-encoded WebSocket frame for eligible text broadcasts, including room broadcasts, instead of framing and copying the payload separately for every recipient.
 This module only runs on Linux/FreeBSD/macOS.
 
+Engine.IO integration
+---------------------
+
+The regular `Server` delivers validated text frames as `Buffer` values with
+`isBinary === false`, matching the interface Engine.IO expects from `ws`.
+Engine.IO then performs its normal synchronous text conversion. Existing
+Engine.IO and Socket.IO configurations therefore receive the optimized path
+without code changes, including for Unicode-heavy traffic.
+
+Direct consumers that depend on the eiows 10.0.1 behavior of receiving a
+JavaScript string can temporarily opt back in with `textAsString: true`.
+
 Published packages include Node-API prebuilds for:
 
 - Linux x64 and arm64 (both glibc and musl/Alpine)
@@ -26,18 +38,6 @@ or
 
 yarn add eiows
 
-Release packages are built manually with `.github/workflows/prebuilds.yml`.
-After updating the version in `package.json`, commit the release and push a tag
-matching that version on the same commit, such as `10.0.0` or `v10.0.0`. Run
-the workflow with that tag selected on the GitHub Actions page; no release
-input is required. The workflow requires a tag ref, verifies that it matches
-the package version, then builds every prebuild from the tag's exact commit.
-It assembles one npm tarball and verifies that tarball without running install
-scripts on Node.js 22/24/26 with glibc and musl. Download the `npm-package`
-workflow artifact and publish the contained tarball manually with
-`npm publish eiows-*.tgz --access public`.
-
-
 Examples:
 
     // ESM
@@ -49,9 +49,7 @@ Examples:
 
     let io = new Server(server, {
         wsEngine: eiows.Server,
-        perMessageDeflate: {
-            threshold: 32768
-        }
+        perMessageDeflate: false
     });
 
     io.on("connection", () => {
@@ -65,9 +63,7 @@ Examples:
 
     var io = require("socket.io")(server, {
         wsEngine: require("eiows").Server,
-        perMessageDeflate: {
-            threshold: 32768
-        }
+        perMessageDeflate: false
     });
 
     io.on("connection", function(socket) {

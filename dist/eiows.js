@@ -42,32 +42,35 @@ function toBuffer(data) {
     return Buffer.from(data);
 }
 
-function getMessageByteLength(message, binary) {
-    if (!binary) return Buffer.byteLength(message);
-    if (Buffer.isBuffer(message)) return message.length;
-    if (message instanceof ArrayBuffer || ArrayBuffer.isView(message)) {
-        return message.byteLength;
-    }
-    return toBuffer(message).length;
-}
-
 function createFrameHeader(payloadLength, opCode) {
+    const cache = opCode === eiows.OPCODE_TEXT
+        ? createFrameHeader.textCache
+        : createFrameHeader.binaryCache;
+    if (cache.length === payloadLength) return cache.header;
+
+    let header;
     if (payloadLength < 126) {
-        return Buffer.from([0x80 | opCode, payloadLength]);
-    }
-    if (payloadLength <= 0xffff) {
-        const header = Buffer.allocUnsafe(4);
+        header = Buffer.allocUnsafe(2);
+        header[0] = 0x80 | opCode;
+        header[1] = payloadLength;
+    } else if (payloadLength <= 0xffff) {
+        header = Buffer.allocUnsafe(4);
         header[0] = 0x80 | opCode;
         header[1] = 126;
         header.writeUInt16BE(payloadLength, 2);
-        return header;
+    } else {
+        header = Buffer.allocUnsafe(10);
+        header[0] = 0x80 | opCode;
+        header[1] = 127;
+        header.writeBigUInt64BE(BigInt(payloadLength), 2);
     }
-    const header = Buffer.allocUnsafe(10);
-    header[0] = 0x80 | opCode;
-    header[1] = 127;
-    header.writeBigUInt64BE(BigInt(payloadLength), 2);
+    cache.length = payloadLength;
+    cache.header = header;
     return header;
 }
+
+createFrameHeader.textCache = { length: -1, header: null };
+createFrameHeader.binaryCache = { length: -1, header: null };
 
 function headerValue(value) {
     if (Array.isArray(value)) return value.join(', ');
@@ -119,7 +122,8 @@ function abortConnection(socket, code, message) {
 }
 
 class WebSocket extends EventEmitter {
-    constructor(external, socket, server, compressEnabled, compressThreshold, protocol, extensions) {
+    constructor(external, socket, server, compressEnabled, compressThreshold, protocol, extensions,
+                textAsBuffer) {
         super();
         this.external = external;
         this.CONNECTING = eiows.CONNECTING;
@@ -132,6 +136,7 @@ class WebSocket extends EventEmitter {
         this.protocol = protocol;
         this.extensions = extensions;
         this.binaryType = 'nodebuffer';
+        this._textAsBuffer = textAsBuffer;
 
         this._transportSocket = socket;
         this._server = server;
@@ -174,7 +179,7 @@ class WebSocket extends EventEmitter {
         if (!this.external || this.readyState === eiows.CLOSED) return;
         let events;
         try {
-            events = native.consume(this.external, data);
+            events = native.consume(this.external, data, this._textAsBuffer);
         } catch (error) {
             this._fail(error);
             return;
@@ -206,9 +211,10 @@ class WebSocket extends EventEmitter {
             return false;
         }
         try {
-            return socket.write(frame, (error) => {
-                if (callback) callback(error || undefined);
-            });
+            if (callback) {
+                return socket.write(frame, (error) => callback(error || undefined));
+            }
+            return socket.write(frame);
         } catch (error) {
             if (callback) process.nextTick(callback, error);
             this._fail(error);
@@ -229,18 +235,52 @@ class WebSocket extends EventEmitter {
             return;
         }
 
+        if (list.length === 1) {
+            this._writeFrame(list[0], callback);
+            return;
+        }
+        this._writeFrameParts(list, callback);
+    }
+
+    _writeFrameParts(list, callback) {
+        const socket = this._transportSocket;
         let corked = false;
         try {
-            if (list.length > 1 && typeof socket.cork === 'function') {
+            if (typeof socket.cork === 'function') {
                 socket.cork();
                 corked = true;
             }
             for (let index = 0; index < list.length - 1; index++) {
                 socket.write(list[index]);
             }
-            socket.write(list[list.length - 1], (error) => {
-                if (callback) callback(error || undefined);
-            });
+            if (callback) {
+                socket.write(list[list.length - 1], (error) =>
+                    callback(error || undefined));
+            } else {
+                socket.write(list[list.length - 1]);
+            }
+        } catch (error) {
+            if (callback) process.nextTick(callback, error);
+            this._fail(error);
+        } finally {
+            if (corked) socket.uncork();
+        }
+    }
+
+    _writeTwoFrameParts(header, payload, callback) {
+        const socket = this._transportSocket;
+        let corked = false;
+        try {
+            if (typeof socket.cork === 'function') {
+                socket.cork();
+                corked = true;
+            }
+            socket.write(header);
+            if (callback) {
+                socket.write(payload, (error) => callback(error || undefined));
+            } else {
+                socket.write(payload);
+            }
         } catch (error) {
             if (callback) process.nextTick(callback, error);
             this._fail(error);
@@ -307,20 +347,25 @@ class WebSocket extends EventEmitter {
         }
 
         const binary = typeof message !== 'string';
+        const payload = binary ? toBuffer(message) : message;
+        const payloadLength = binary ? payload.length : Buffer.byteLength(payload);
         const compress = this.compressEnabled &&
             (!options || options.compress !== false) &&
-            getMessageByteLength(message, binary) >= this.compressThreshold;
+            payloadLength >= this.compressThreshold;
 
         // Server frames are not masked. For the common uncompressed path,
         // write the small header and original payload as a corked vector so
         // the payload does not need to cross into, and be copied by, native code.
         if (!compress) {
-            const payload = binary ? toBuffer(message) : message;
             const header = createFrameHeader(
-                getMessageByteLength(payload, binary),
+                payloadLength,
                 binary ? eiows.OPCODE_BINARY : eiows.OPCODE_TEXT
             );
-            this._sendFrameList(payload.length === 0 ? [header] : [header, payload], callback);
+            if (payloadLength === 0) {
+                this._writeFrame(header, callback);
+            } else {
+                this._writeTwoFrameParts(header, payload, callback);
+            }
             return;
         }
 
@@ -417,6 +462,9 @@ class Server extends EventEmitter {
         }
         this._maxPayload = maxPayload;
         this._noDelay = options.noDelay === undefined ? true : Boolean(options.noDelay);
+        // Match ws: text is delivered as Buffer with isBinary === false.
+        // Engine.IO performs its normal string conversion in the transport.
+        this._textAsBuffer = options.textAsString !== true;
         this._clients = new Set();
         this._closing = false;
         this._closed = false;
@@ -508,7 +556,8 @@ class Server extends EventEmitter {
             this._compressEnabled,
             this._compressThreshold,
             protocol,
-            extensions
+            extensions,
+            this._textAsBuffer
         );
         this._clients.add(webSocket);
 

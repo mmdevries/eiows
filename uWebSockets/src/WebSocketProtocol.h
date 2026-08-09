@@ -8,6 +8,10 @@
 #include <immintrin.h>
 #define EIOWS_USE_AVX2 1
 #endif
+#if defined(__aarch64__) && (defined(__GNUC__) || defined(__clang__))
+#include <arm_neon.h>
+#define EIOWS_USE_NEON 1
+#endif
 #ifdef __APPLE__
 #include <libkern/OSByteOrder.h>
 #define htobe64(x) OSSwapHostToBigInt64(x)
@@ -128,10 +132,72 @@ namespace eioWS {
         }
 #endif
 
+#ifdef EIOWS_USE_NEON
+        static const unsigned int NEON_UNMASK_MIN_LENGTH = 64;
+        static const unsigned int NEON_UTF8_ASCII_MIN_LENGTH = 64;
+
+        static void unmaskNeon(char *dst,
+                               const char *src,
+                               const char *mask,
+                               unsigned int length) {
+            const uint8_t maskBytes[16] = {
+                static_cast<uint8_t>(mask[0]), static_cast<uint8_t>(mask[1]),
+                static_cast<uint8_t>(mask[2]), static_cast<uint8_t>(mask[3]),
+                static_cast<uint8_t>(mask[0]), static_cast<uint8_t>(mask[1]),
+                static_cast<uint8_t>(mask[2]), static_cast<uint8_t>(mask[3]),
+                static_cast<uint8_t>(mask[0]), static_cast<uint8_t>(mask[1]),
+                static_cast<uint8_t>(mask[2]), static_cast<uint8_t>(mask[3]),
+                static_cast<uint8_t>(mask[0]), static_cast<uint8_t>(mask[1]),
+                static_cast<uint8_t>(mask[2]), static_cast<uint8_t>(mask[3])
+            };
+            const uint8x16_t maskVector = vld1q_u8(maskBytes);
+
+            unsigned int index = 0;
+            for (; index + 16 <= length; index += 16) {
+                const uint8x16_t input = vld1q_u8(
+                    reinterpret_cast<const uint8_t *>(src + index));
+                vst1q_u8(
+                    reinterpret_cast<uint8_t *>(dst + index),
+                    veorq_u8(input, maskVector));
+            }
+            for (; index < length; index++) {
+                dst[index] = src[index] ^ mask[index & 3];
+            }
+        }
+
+        static unsigned char *skipAsciiNeon(unsigned char *s, unsigned char *e) {
+            while (s + 64 <= e) {
+                const uint8x16_t combined = vorrq_u8(
+                    vorrq_u8(vld1q_u8(s), vld1q_u8(s + 16)),
+                    vorrq_u8(vld1q_u8(s + 32), vld1q_u8(s + 48)));
+                if (vmaxvq_u8(combined) & 0x80) {
+                    break;
+                }
+                s += 64;
+            }
+            while (s + 16 <= e) {
+                const uint8x16_t input = vld1q_u8(s);
+                if (vmaxvq_u8(input) & 0x80) {
+                    break;
+                }
+                s += 16;
+            }
+            while (s != e && !(*s & 0x80)) {
+                s++;
+            }
+            return s;
+        }
+#endif
+
         static inline void unmaskImprecise(char *dst, char *src, char *mask, unsigned int length) {
 #ifdef EIOWS_USE_AVX2
             if (length >= AVX2_UNMASK_MIN_LENGTH && hasAvx2()) {
                 unmaskAvx2(dst, src, mask, length);
+                return;
+            }
+#elif defined(EIOWS_USE_NEON)
+            if (length >= NEON_UNMASK_MIN_LENGTH) {
+                unmaskNeon(dst, src, mask, length);
                 return;
             }
 #endif
@@ -165,6 +231,12 @@ namespace eioWS {
             unsigned int length = static_cast<unsigned int>(stop - data);
             if (length >= AVX2_UNMASK_MIN_LENGTH && hasAvx2()) {
                 unmaskAvx2(data, data, mask, length);
+                return;
+            }
+#elif defined(EIOWS_USE_NEON)
+            unsigned int length = static_cast<unsigned int>(stop - data);
+            if (length >= NEON_UNMASK_MIN_LENGTH) {
+                unmaskNeon(data, data, mask, length);
                 return;
             }
 #endif
@@ -305,6 +377,8 @@ namespace eioWS {
             static bool isValidUtf8(unsigned char *s, size_t length) {
 #ifdef EIOWS_USE_AVX2
                 const bool useAvx2Ascii = length >= AVX2_UTF8_ASCII_MIN_LENGTH && hasAvx2();
+#elif defined(EIOWS_USE_NEON)
+                const bool useNeonAscii = length >= NEON_UTF8_ASCII_MIN_LENGTH;
 #endif
                 for (unsigned char *e = s + length; s != e; ) {
                     uint32_t asciiWord = 0;
@@ -315,6 +389,10 @@ namespace eioWS {
 #ifdef EIOWS_USE_AVX2
                         if (useAvx2Ascii) {
                             s = skipAsciiAvx2(s, e);
+                        } else
+#elif defined(EIOWS_USE_NEON)
+                        if (useNeonAscii) {
+                            s = skipAsciiNeon(s, e);
                         } else
 #endif
                         s += 4;

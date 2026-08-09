@@ -233,4 +233,4 @@ jobs:
             --volume "${GITHUB_WORKSPACE}:/package" \
             --workdir /package \
             "node:${{ matrix.node }}-${{ matrix.image_suffix }}" \
-            sh -c 'mkdir smoke && cd smoke && npm init -y >/dev/null && npm install --ignore-scripts ../eiows-*.tgz && node -e "(async () => { const cjs = require(\"eiows\"); const esm = await import(\"eiows\"); if (typeof cjs.Server !== \"function\" || esm.Server !== cjs.Server || esm.default !== cjs || \"native\" in cjs) throw new Error(\"invalid public module API\"); })()"'
+            sh -c 'mkdir smoke && cd smoke && npm init -y >/dev/null && npm install --ignore-scripts ../eiows-*.tgz && node -e "(async () => { const cjs = require(\"eiows\"); const esm = await import(\"eiows\"); if (typeof cjs.Server !== \"function\" || esm.Server !== cjs.Server || esm.default !== cjs || \"native\" in cjs) throw new Error(\"invalid public module API\"); const server = new cjs.Server({ perMessageDeflate: false }); if (server._textAsBuffer !== true) throw new Error(\"invalid default text mode\"); server.close(); })()"'

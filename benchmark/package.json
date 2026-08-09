@@ -1,0 +1,12 @@
+{
+  "name": "eiows-comparison-benchmark",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Process-isolated comparison of eiows, eiows 9.2.0 and ws",
+  "dependencies": {
+    "bufferutil": "4.1.0",
+    "eiows-9.2.0": "npm:eiows@9.2.0",
+    "utf-8-validate": "6.0.6",
+    "ws": "8.21.3"
+  }
+}
