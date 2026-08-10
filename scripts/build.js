@@ -1,8 +1,8 @@
 'use strict';
 
 const { createHash } = require('node:crypto');
-const { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync,
-    rmSync, statSync, writeFileSync, mkdtempSync } = require('node:fs');
+const { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync,
+    renameSync, rmSync, statSync, writeFileSync, mkdtempSync } = require('node:fs');
 const { get } = require('node:https');
 const { homedir, tmpdir } = require('node:os');
 const path = require('node:path');
@@ -13,6 +13,7 @@ const { setTimeout: delay } = require('node:timers/promises');
 const repositoryDirectory = path.join(__dirname, '..');
 const nodeVersion = process.versions.node;
 const nodeMajor = Number(nodeVersion.split('.')[0]);
+const nodeModuleVersion = process.versions.modules;
 const supportedMajors = new Set([22, 24, 26]);
 
 if (!supportedMajors.has(nodeMajor)) {
@@ -119,6 +120,19 @@ async function acquireCacheLock(lockDirectory) {
 }
 
 function build(sourceDirectory) {
+    const source = path.join(repositoryDirectory, 'build', 'Release', 'eiows.node');
+    const destination = path.join(
+        repositoryDirectory,
+        'dist',
+        `eiows_${nodeModuleVersion}.node`
+    );
+    // A failed rebuild must not leave a stale binary loadable for this ABI.
+    // Builds for other ABIs remain available for their matching runtimes.
+    rmSync(destination, { force: true });
+    // Version 10 used an unqualified filename. Never leave it available as a
+    // fallback because this addon uses ABI-specific Node and V8 internals.
+    rmSync(path.join(repositoryDirectory, 'dist', 'eiows.node'), { force: true });
+
     const nodeGyp = require.resolve('node-gyp/bin/node-gyp.js');
     const result = spawnSync(
         process.execPath,
@@ -128,6 +142,21 @@ function build(sourceDirectory) {
     if (result.error) throw result.error;
     if (result.status !== 0) {
         throw new Error(`node-gyp exited with status ${result.status}`);
+    }
+
+    if (!existsSync(source)) {
+        throw new Error(`node-gyp did not produce ${source}`);
+    }
+    const temporary = path.join(
+        path.dirname(destination),
+        `.${path.basename(destination)}.${process.pid}.tmp`
+    );
+    rmSync(temporary, { force: true });
+    try {
+        copyFileSync(source, temporary);
+        renameSync(temporary, destination);
+    } finally {
+        rmSync(temporary, { force: true });
     }
 }
 

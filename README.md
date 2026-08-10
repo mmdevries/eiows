@@ -21,7 +21,13 @@ matching source tree for offline or hermetic builds, and
 `EIOWS_NODE_SOURCE_CACHE` to choose a different cache directory. A C++20
 compiler, Python, make and zlib development headers are required.
 
-eiows 10 exposes only the supported JavaScript API. The low-level native binding that older releases exposed as `eiows.native` is no longer public; native session handles are implementation details and cannot be used safely across API boundaries.
+The compiled addon is stored as `dist/eiows_ABI.node`, where `ABI` is the
+running Node.js module ABI number. The loader never falls back to a binary for
+another ABI, and the addon also rejects an exact Node.js release mismatch before
+initializing any version-specific Node or V8 internals. Rebuild eiows after every
+Node.js upgrade, including patch releases.
+
+eiows 11 exposes only the supported JavaScript API. The low-level native binding that older releases exposed as `eiows.native` is no longer public; native session handles are implementation details and cannot be used safely across API boundaries.
 
 When `perMessageDeflate` is disabled, eiows also supports Engine.IO's `_sender.sendFrame()` fast path. Socket.IO can use this to reuse a single pre-encoded WebSocket frame for eligible text broadcasts, including room broadcasts, instead of framing and copying the payload separately for every recipient.
 This module only runs on Linux/FreeBSD/macOS.

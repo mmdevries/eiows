@@ -15,7 +15,8 @@ const zlib = require('node:zlib');
 const { Server: EngineIo } = require('engine.io');
 
 const eiows = require('..');
-const native = require('../dist/eiows.node');
+const nativeBinary = `../dist/eiows_${process.versions.modules}.node`;
+const native = require(nativeBinary);
 
 const fixtures = path.join(__dirname, 'fixtures');
 const tlsOptions = {
@@ -874,6 +875,10 @@ test('exposes the same supported API through ESM and CommonJS', async () => {
         assert.strictEqual(esm[name], eiows[name], `mismatched ESM export: ${name}`);
     }
     assert.equal(Object.hasOwn(eiows, 'native'), false);
+    assert.equal(
+        path.basename(require.resolve(nativeBinary)),
+        `eiows_${process.versions.modules}.node`
+    );
 });
 
 test('negotiates permessage-deflate and handles compressed client frames', async () => {

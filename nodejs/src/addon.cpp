@@ -1,10 +1,12 @@
 #include <node_api.h>
+#include <node_version.h>
 
 #include "../../uWebSockets/src/Extensions.h"
 #include "../../uWebSockets/src/StreamWebSocket.h"
 #include "native_transport.h"
 
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 #include <memory>
 #include <string>
@@ -837,6 +839,29 @@ napi_value guardedCallback(napi_env env, napi_callback_info info) {
 }
 
 napi_value initialize(napi_env env, napi_value exports) {
+    const napi_node_version *runtimeVersion = nullptr;
+    if (napi_get_node_version(env, &runtimeVersion) != napi_ok || !runtimeVersion) {
+        napi_throw_error(env, nullptr, "failed to read the Node.js runtime version");
+        return nullptr;
+    }
+    if (runtimeVersion->major != NODE_MAJOR_VERSION ||
+        runtimeVersion->minor != NODE_MINOR_VERSION ||
+        runtimeVersion->patch != NODE_PATCH_VERSION) {
+        char message[192];
+        std::snprintf(
+            message,
+            sizeof(message),
+            "eiows was built for Node.js %d.%d.%d but is running on Node.js %u.%u.%u; "
+            "rebuild eiows for the current Node.js release",
+            NODE_MAJOR_VERSION,
+            NODE_MINOR_VERSION,
+            NODE_PATCH_VERSION,
+            runtimeVersion->major,
+            runtimeVersion->minor,
+            runtimeVersion->patch);
+        napi_throw_error(env, nullptr, message);
+        return nullptr;
+    }
     if (!eiowsNode::initializeNativeEnvironment(env)) {
         napi_throw_error(env, nullptr, "failed to initialize native transport environment");
         return nullptr;

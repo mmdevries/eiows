@@ -1,6 +1,7 @@
 /build/
 /build_log.txt
 /dist/eiows.node
+/dist/eiows_*.node
 /node_modules/
 /prebuilds/
 /benchmark/node_modules/

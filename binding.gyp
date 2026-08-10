@@ -49,24 +49,6 @@
                     }
                 }]
             ]
-        },
-        {
-            "target_name": "action_after_build",
-            "type": "none",
-            "dependencies": ["eiows"],
-            "actions": [
-                {
-                    "action_name": "move_lib",
-                    "inputs": ["<(PRODUCT_DIR)/eiows.node"],
-                    "outputs": ["dist/eiows.node"],
-                    "action": [
-                        "node",
-                        "scripts/copy-binary.js",
-                        "<(PRODUCT_DIR)/eiows.node",
-                        "dist/eiows.node"
-                    ]
-                }
-            ]
         }
     ]
 }

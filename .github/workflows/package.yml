@@ -28,9 +28,10 @@ jobs:
       - run: npm ci
       - run: npm test
       - name: Pack source-only module
+        id: pack
         run: |
           npm pack
-          archive="$(find . -maxdepth 1 -name 'eiows-*.tgz' -print -quit)"
+          archive="$(find "$(pwd)" -maxdepth 1 -name 'eiows-*.tgz' -print -quit)"
           test -n "$archive"
           tar -tzf "$archive" | grep -q '^package/nodejs/src/native_transport.cpp$'
           tar -tzf "$archive" | grep -q '^package/scripts/build.js$'
@@ -38,6 +39,14 @@ jobs:
             echo 'source package unexpectedly contains a native binary' >&2
             exit 1
           fi
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+      - name: Install and exercise packed module
+        env:
+          PACKAGE_ARCHIVE: ${{ steps.pack.outputs.archive }}
+        run: |
+          smoke_directory="$(mktemp -d)"
+          npm install --prefix "$smoke_directory" "$PACKAGE_ARCHIVE"
+          node test/package-smoke.js "$smoke_directory"
       - uses: actions/upload-artifact@v7
         with:
           name: npm-package

@@ -25,7 +25,6 @@
     "dist/eiows.d.ts",
     "dist/wrapper.mjs",
     "scripts/build.js",
-    "scripts/copy-binary.js",
     "nodejs/LICENSE",
     "nodejs/src/addon.cpp",
     "nodejs/src/native_transport.cpp",
@@ -45,7 +44,7 @@
     "test": "node --test test/*.test.js"
   },
   "engines": {
-    "node": "^22.0.0 || ^24.0.0 || ^26.0.0"
+    "node": "^22.9.0 || ^24.0.0 || ^26.0.0"
   },
   "keywords": [
     "websocket",
@@ -63,7 +62,7 @@
   "homepage": "https://github.com/mmdevries/eiows",
   "gypfile": true,
   "dependencies": {
-    "node-gyp": "^13.0.1"
+    "node-gyp": "^12.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

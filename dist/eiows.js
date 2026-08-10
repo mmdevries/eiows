@@ -22,11 +22,13 @@ eiows.CLOSING = 2;
 eiows.CLOSED = 3;
 
 const native = (() => {
+    const binary = `./eiows_${process.versions.modules}.node`;
     try {
-        return require('./eiows.node');
+        return require(binary);
     } catch (error) {
         throw new Error(error.toString() + '\n\nNo compatible eiows native binary was found. ' +
-            'Please install a supported C++20 compiler and rebuild the module from source.');
+            `Expected ${binary}. Please install a supported C++20 compiler and ` +
+            'rebuild the module from source for this exact Node.js release.');
     }
 })();
 
