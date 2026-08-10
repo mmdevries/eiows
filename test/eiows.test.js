@@ -93,6 +93,33 @@ function destroySocket(socket) {
     });
 }
 
+function collectUntilSocketClose(socket, timeoutMs = 3000) {
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        const timeout = setTimeout(
+            () => finish(new Error('timed out waiting for socket close')),
+            timeoutMs
+        );
+        const cleanup = () => {
+            clearTimeout(timeout);
+            socket.removeListener('data', onData);
+            socket.removeListener('error', onError);
+            socket.removeListener('close', onClose);
+        };
+        const finish = (error) => {
+            cleanup();
+            if (error) reject(error);
+            else resolve(Buffer.concat(chunks));
+        };
+        const onData = (chunk) => chunks.push(chunk);
+        const onError = (error) => finish(error);
+        const onClose = () => finish();
+        socket.on('data', onData);
+        socket.once('error', onError);
+        socket.once('close', onClose);
+    });
+}
+
 function connect(port, secure) {
     return secure
         ? tls.connect({ port, host: '127.0.0.1', rejectUnauthorized: false })
@@ -224,6 +251,8 @@ async function runEchoCase(secure, textAsString = false) {
         wsServer.handleUpgrade(request, socket, head, (webSocket, callbackRequest) => {
             assert.equal(callbackRequest, request);
             assert.equal(webSocket._nativeTransport, true);
+            assert.equal(webSocket._upgradePending, false);
+            assert.equal(webSocket.readyState, eiows.OPEN);
             assert.equal(webSocket._transportSocket, null);
             assert.notEqual(webSocket._socket, socket);
             assert.equal(socket.destroyed, true);
@@ -288,6 +317,94 @@ async function runEchoCase(secure, textAsString = false) {
 test('takes ownership from Node TCP and consumes upgradeHead natively', () => runEchoCase(false));
 test('takes ownership of the descriptor and SSL state from TLSWrap', () => runEchoCase(true));
 test('can restore legacy string messages with textAsString', () => runEchoCase(false, true));
+
+async function runCloseDuringPendingUpgradeCase(secure) {
+    const server = secure ? https.createServer(tlsOptions) : http.createServer();
+    const wsServer = new eiows.Server({ perMessageDeflate: false });
+    let callbackCalled = false;
+    let transportClosed = false;
+    let resolveServerClosed;
+    const serverClosed = new Promise((resolve) => { resolveServerClosed = resolve; });
+
+    server.on('upgrade', (request, transport, head) => {
+        transport.once('close', () => { transportClosed = true; });
+        wsServer.handleUpgrade(request, transport, head, () => {
+            callbackCalled = true;
+        });
+        // Run before the setImmediate() that transfers the descriptor. This is
+        // the production shutdown race that previously queued a close frame
+        // ahead of the HTTP 101 response.
+        process.nextTick(() => wsServer.close(resolveServerClosed));
+    });
+
+    const port = await listen(server);
+    const socket = connect(port, secure);
+    try {
+        await new Promise((resolve, reject) => {
+            socket.once(secure ? 'secureConnect' : 'connect', resolve);
+            socket.once('error', reject);
+        });
+        const responsePromise = collectUntilSocketClose(socket);
+        socket.write(websocketRequest());
+        const response = await responsePromise;
+        await serverClosed;
+
+        assert.match(response.toString(), /^HTTP\/1\.1 503 Service Unavailable\r\n/);
+        assert.equal(response[0], 0x48, 'HTTP must be the first byte on the wire');
+        assert.equal(callbackCalled, false);
+        assert.equal(transportClosed, true);
+        assert.equal(wsServer._clients.size, 0);
+        assert.equal(wsServer._closed, true);
+    } finally {
+        if (!socket.destroyed) await destroySocket(socket);
+        if (!wsServer._closed) await new Promise((resolve) => wsServer.close(resolve));
+        if (server.listening) await closeServer(server);
+    }
+}
+
+async function runCloseFromHeadersCase(secure) {
+    const server = secure ? https.createServer(tlsOptions) : http.createServer();
+    const wsServer = new eiows.Server({ perMessageDeflate: false });
+    let callbackCalled = false;
+    let resolveServerClosed;
+    const serverClosed = new Promise((resolve) => { resolveServerClosed = resolve; });
+    wsServer.once('headers', () => wsServer.close(resolveServerClosed));
+    server.on('upgrade', (request, transport, head) => {
+        wsServer.handleUpgrade(request, transport, head, () => {
+            callbackCalled = true;
+        });
+    });
+
+    const port = await listen(server);
+    const socket = connect(port, secure);
+    try {
+        await new Promise((resolve, reject) => {
+            socket.once(secure ? 'secureConnect' : 'connect', resolve);
+            socket.once('error', reject);
+        });
+        const responsePromise = collectUntilSocketClose(socket);
+        socket.write(websocketRequest());
+        const response = await responsePromise;
+        await serverClosed;
+
+        assert.match(response.toString(), /^HTTP\/1\.1 503 Service Unavailable\r\n/);
+        assert.equal(callbackCalled, false);
+        assert.equal(wsServer._clients.size, 0);
+        assert.equal(wsServer._closed, true);
+    } finally {
+        if (!socket.destroyed) await destroySocket(socket);
+        if (!wsServer._closed) await new Promise((resolve) => wsServer.close(resolve));
+        if (server.listening) await closeServer(server);
+    }
+}
+
+for (const secure of [false, true]) {
+    const transport = secure ? 'TLS' : 'TCP';
+    test(`Server.close aborts a pending native ${transport} upgrade before framing`, () =>
+        runCloseDuringPendingUpgradeCase(secure));
+    test(`Server.close from headers rejects the ${transport} upgrade`, () =>
+        runCloseFromHeadersCase(secure));
+}
 
 test('dispatches owned transport events through their AsyncResource', async () => {
     const server = http.createServer();

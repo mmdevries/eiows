@@ -148,6 +148,7 @@ class WebSocket extends EventEmitter {
         this._socketError = null;
         this._nativeTransport = false;
         this._nativeActive = false;
+        this._upgradePending = false;
         this._socketInfo = {
             remoteAddress: socket.remoteAddress,
             remotePort: socket.remotePort,
@@ -204,8 +205,18 @@ class WebSocket extends EventEmitter {
         socket.once('close', () => {
             socket.removeListener('error', onError);
             this._transportSocket = null;
+            if (!this._upgradePending || this.readyState !== eiows.CONNECTING) {
+                this._upgradePending = false;
+                this._finalizeClose();
+                return;
+            }
             const activate = () => {
-                if (!this.external || this.readyState === eiows.CLOSED) return;
+                if (!this.external || !this._upgradePending ||
+                    this.readyState !== eiows.CONNECTING) {
+                    this._upgradePending = false;
+                    this._finalizeClose();
+                    return;
+                }
                 try {
                     const status = native.activateTransport(this.external);
                     if (status < 0) {
@@ -214,6 +225,8 @@ class WebSocket extends EventEmitter {
                     this._nativeActive = true;
                     if (transferError) throw transferError;
                     if (!this._writeFrame(response)) return;
+                    this._upgradePending = false;
+                    this.readyState = eiows.OPEN;
                     callback(this, request);
                     if (upgradeHead && upgradeHead.length) this._consume(upgradeHead);
                 } catch (error) {
@@ -229,7 +242,12 @@ class WebSocket extends EventEmitter {
                 activate();
             }
         });
-        setImmediate(() => socket.destroy());
+        setImmediate(() => {
+            if (this._upgradePending && this.readyState === eiows.CONNECTING &&
+                this._transportSocket === socket) {
+                socket.destroy();
+            }
+        });
     }
 
     _consume(data) {
@@ -438,6 +456,10 @@ class WebSocket extends EventEmitter {
             this._socketError = error;
             this.emit('error', error);
         }
+        if (this._upgradePending) {
+            this._abortPendingUpgrade(false);
+            return;
+        }
         if (this._nativeTransport && this.external) {
             native.terminateTransport(this.external);
             if (!this._nativeActive) this._finalizeClose();
@@ -446,6 +468,31 @@ class WebSocket extends EventEmitter {
         } else {
             this._finalizeClose();
         }
+    }
+
+    _abortPendingUpgrade(sendResponse) {
+        if (!this._upgradePending) return false;
+        this.readyState = eiows.CLOSING;
+        if (this._nativeTransport && this.external) {
+            native.terminateTransport(this.external);
+        }
+
+        const socket = this._transportSocket;
+        if (socket) {
+            if (!socket.destroyed) {
+                if (sendResponse) abortConnection(socket, 503, 'Service Unavailable');
+                else socket.destroy();
+            }
+            // Both native and fallback upgrade paths finalize from the socket's
+            // close listener. Keeping the session registered until then makes
+            // Server.close() wait for the transport to be fully released.
+            return true;
+        }
+
+        this._upgradePending = false;
+        if (this._nativeActive) return true;
+        this._finalizeClose();
+        return true;
     }
 
     _startCloseTimeout() {
@@ -463,6 +510,7 @@ class WebSocket extends EventEmitter {
     _finalizeClose() {
         if (this._closed) return;
         this._closed = true;
+        this._upgradePending = false;
         this.readyState = eiows.CLOSED;
         if (this._closeTimer) {
             clearTimeout(this._closeTimer);
@@ -549,6 +597,10 @@ class WebSocket extends EventEmitter {
 
     close(code, data) {
         if (this.readyState === eiows.CLOSING || this.readyState === eiows.CLOSED) return;
+        if (this._upgradePending) {
+            this._abortPendingUpgrade(true);
+            return;
+        }
 
         if (code === undefined) {
             if (data !== undefined && toBuffer(data).length) {
@@ -588,6 +640,10 @@ class WebSocket extends EventEmitter {
 
     terminate() {
         if (this.readyState === eiows.CLOSED) return;
+        if (this._upgradePending) {
+            this._abortPendingUpgrade(false);
+            return;
+        }
         this.readyState = eiows.CLOSING;
         if (this._nativeTransport && this.external) {
             native.terminateTransport(this.external);
@@ -723,6 +779,15 @@ class Server extends EventEmitter {
             return;
         }
 
+        // `headers` is intentionally re-entrant. A listener may initiate
+        // shutdown, in which case this request must not create a client after
+        // the server has committed to closing.
+        if (this._closing || this._closed) {
+            native.dispose(external);
+            abortConnection(socket, 503, 'Service Unavailable');
+            return;
+        }
+
         const webSocket = new WebSocket(
             external,
             socket,
@@ -733,6 +798,8 @@ class Server extends EventEmitter {
             extensions,
             this._textAsBuffer
         );
+        webSocket._upgradePending = true;
+        webSocket.readyState = eiows.CONNECTING;
         this._clients.add(webSocket);
 
         try {
@@ -741,6 +808,12 @@ class Server extends EventEmitter {
                 webSocket._completeNativeUpgrade(response, upgradeHead, callback, request);
             } else {
                 socket.write(response);
+                if (!webSocket._upgradePending ||
+                    webSocket.readyState !== eiows.CONNECTING) {
+                    return;
+                }
+                webSocket._upgradePending = false;
+                webSocket.readyState = eiows.OPEN;
                 callback(webSocket, request);
                 if (upgradeHead && upgradeHead.length) webSocket._consume(upgradeHead);
                 if (!socket.destroyed && typeof socket.resume === 'function') socket.resume();
