@@ -74,8 +74,8 @@ public:
 };
 
 /*
- * Socket-independent WebSocket protocol state. Node.js remains the owner of
- * the Duplex/TLSSocket; this class only parses and creates WebSocket frames.
+ * Socket-independent WebSocket protocol state used by the owned native
+ * transport after the HTTP socket has been detached from Node.js.
  */
 class StreamWebSocket : public WebSocketState {
     enum class CompressionStatus : unsigned char {

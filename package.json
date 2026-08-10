@@ -1,6 +1,6 @@
 {
   "name": "eiows",
-  "version": "10.1.0",
+  "version": "11.0.0",
   "description": "high-performance Node.js WebSocket engine for Socket.IO",
   "license": "MIT",
   "main": "./dist/eiows.js",
@@ -24,9 +24,12 @@
     "dist/eiows.js",
     "dist/eiows.d.ts",
     "dist/wrapper.mjs",
-    "prebuilds",
+    "scripts/build.js",
+    "scripts/copy-binary.js",
     "nodejs/LICENSE",
     "nodejs/src/addon.cpp",
+    "nodejs/src/native_transport.cpp",
+    "nodejs/src/native_transport.h",
     "uWebSockets/LICENSE",
     "uWebSockets/src/Extensions.cpp",
     "uWebSockets/src/Extensions.h",
@@ -35,15 +38,14 @@
     "uWebSockets/src/WebSocketProtocol.h"
   ],
   "scripts": {
-    "build": "node-gyp rebuild",
-    "install": "node-gyp-build",
-    "prebuildify": "prebuildify --napi --target=22.0.0 --strip",
+    "build": "node scripts/build.js",
+    "install": "node scripts/build.js",
     "pretest": "npm run test:types",
     "test:types": "tsc -p test/types/tsconfig.json",
     "test": "node --test test/*.test.js"
   },
   "engines": {
-    "node": ">=22"
+    "node": "^22.0.0 || ^24.0.0 || ^26.0.0"
   },
   "keywords": [
     "websocket",
@@ -61,13 +63,11 @@
   "homepage": "https://github.com/mmdevries/eiows",
   "gypfile": true,
   "dependencies": {
-    "node-gyp-build": "^4.8.4"
+    "node-gyp": "^13.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
     "engine.io": "6.6.9",
-    "node-gyp": "^13.0.1",
-    "prebuildify": "^6.0.1",
     "typescript": "^5.9.3"
   }
 }

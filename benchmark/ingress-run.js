@@ -39,6 +39,7 @@ function parseArguments(argv) {
         inflight: 1,
         payloads: [1024, 16 * 1024, 320 * 1024],
         dataModes: ['text', 'binary', 'app-deflate'],
+        transports: ['tcp'],
         sourceContent: 'ascii',
         serverTextOutput: 'buffer',
         textConsumption: 'native',
@@ -65,6 +66,8 @@ function parseArguments(argv) {
                 parsePositiveInteger(entry, option));
         } else if (option === '--data-modes') {
             options.dataModes = value.split(',').filter(Boolean);
+        } else if (option === '--transports') {
+            options.transports = value.split(',').filter(Boolean);
         } else if (option === '--source-content') {
             options.sourceContent = value;
         } else if (option === '--server-text-output') {
@@ -86,6 +89,10 @@ function parseArguments(argv) {
         options.dataModes.some((value) =>
             !['text', 'binary', 'app-deflate'].includes(value))) {
         throw new TypeError('--data-modes supports text, binary and app-deflate');
+    }
+    if (!options.transports.length ||
+        options.transports.some((value) => !['tcp', 'tls'].includes(value))) {
+        throw new TypeError('--transports supports tcp and tls');
     }
     if (!['native', 'string'].includes(options.textConsumption)) {
         throw new TypeError('--text-consumption supports native and string');
@@ -137,7 +144,14 @@ function createPayload(sourceSize, dataMode, sourceContent) {
 }
 
 class IngressServer {
-    constructor(implementation, binary, payloadBytes, textConsumption, serverTextOutput) {
+    constructor(
+        implementation,
+        binary,
+        payloadBytes,
+        textConsumption,
+        serverTextOutput,
+        transport
+    ) {
         this.implementation = implementation;
         this.nextRequestId = 1;
         this.pending = new Map();
@@ -162,7 +176,8 @@ class IngressServer {
                 String(binary),
                 String(payloadBytes),
                 textConsumption,
-                serverTextOutput
+                serverTextOutput,
+                transport
             ],
             {
                 stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
@@ -236,7 +251,10 @@ class IngressServer {
 
 function openClient(url) {
     return new Promise((resolve, reject) => {
-        const client = new WebSocket(url, { perMessageDeflate: false });
+        const client = new WebSocket(url, {
+            perMessageDeflate: false,
+            rejectUnauthorized: false
+        });
         const onError = (error) => {
             client.removeListener('open', onOpen);
             reject(error);
@@ -335,7 +353,7 @@ async function waitForCount(server, expectedMessages, timeoutMs = 15000) {
     }
 }
 
-async function runCase(implementation, sourceSize, dataMode, options) {
+async function runCase(implementation, transport, sourceSize, dataMode, options) {
     const { payload, binary } = createPayload(
         sourceSize,
         dataMode,
@@ -347,12 +365,18 @@ async function runCase(implementation, sourceSize, dataMode, options) {
         binary,
         payloadBytes,
         options.textConsumption,
-        options.serverTextOutput
+        options.serverTextOutput,
+        transport
     );
     const clients = [];
     try {
         const ready = await server.ready;
-        await addClients(clients, `ws://127.0.0.1:${ready.port}`, options.connections);
+        const protocol = transport === 'tls' ? 'wss' : 'ws';
+        await addClients(
+            clients,
+            `${protocol}://127.0.0.1:${ready.port}`,
+            options.connections
+        );
         await server.request('reset');
         const warmupMessages = await runClientLoad(
             clients,
@@ -379,6 +403,7 @@ async function runCase(implementation, sourceSize, dataMode, options) {
         }
         return {
             implementation,
+            transport,
             sourceSize,
             dataMode,
             wirePayloadBytes: payloadBytes,
@@ -417,34 +442,38 @@ function format(value, digits = 0) {
 
 function aggregate(results, options) {
     const rows = [];
-    for (const sourceSize of options.payloads) {
-        for (const dataMode of options.dataModes) {
-            for (const implementation of options.implementations) {
-                const matching = results.filter((result) =>
-                    result.sourceSize === sourceSize &&
-                    result.dataMode === dataMode &&
-                    result.implementation === implementation);
-                const value = (property) => median(
-                    matching.map((result) => result[property])
-                );
-                rows.push({
-                    implementation,
-                    source: `${format(sourceSize)} B`,
-                    data: dataMode,
-                    'wire payload B': format(value('wirePayloadBytes')),
-                    'messages/s': format(value('messagesPerSecond')),
-                    'logical MiB/s': format(value('logicalMiBPerSecond'), 1),
-                    'wire MiB/s': format(value('wireMiBPerSecond'), 1),
-                    'server CPU %': format(value('serverCpuPercent'), 1),
-                    'M messages/CPU-s': format(
-                        value('millionMessagesPerCpuSecond'),
-                        3
-                    ),
-                    'peak RSS +MiB': format(
-                        value('activePeakRssDeltaBytes') / 1024 / 1024,
-                        1
-                    )
-                });
+    for (const transport of options.transports) {
+        for (const sourceSize of options.payloads) {
+            for (const dataMode of options.dataModes) {
+                for (const implementation of options.implementations) {
+                    const matching = results.filter((result) =>
+                        result.transport === transport &&
+                        result.sourceSize === sourceSize &&
+                        result.dataMode === dataMode &&
+                        result.implementation === implementation);
+                    const value = (property) => median(
+                        matching.map((result) => result[property])
+                    );
+                    rows.push({
+                        implementation,
+                        transport,
+                        source: `${format(sourceSize)} B`,
+                        data: dataMode,
+                        'wire payload B': format(value('wirePayloadBytes')),
+                        'messages/s': format(value('messagesPerSecond')),
+                        'logical MiB/s': format(value('logicalMiBPerSecond'), 1),
+                        'wire MiB/s': format(value('wireMiBPerSecond'), 1),
+                        'server CPU %': format(value('serverCpuPercent'), 1),
+                        'M messages/CPU-s': format(
+                            value('millionMessagesPerCpuSecond'),
+                            3
+                        ),
+                        'peak RSS +MiB': format(
+                            value('activePeakRssDeltaBytes') / 1024 / 1024,
+                            1
+                        )
+                    });
+                }
             }
         }
     }
@@ -466,29 +495,33 @@ async function main() {
     const results = [];
     console.log('Ingress benchmark: permessage-deflate off; client bufferutil enabled');
     console.log('Configuration:', JSON.stringify(options));
-    for (const sourceSize of options.payloads) {
-        for (const dataMode of options.dataModes) {
-            for (let iteration = 0; iteration < options.iterations; iteration++) {
-                const rotated = options.implementations.map((_, index) =>
-                    options.implementations[
-                        (index + iteration) % options.implementations.length
-                    ]);
-                for (const implementation of rotated) {
-                    process.stdout.write(
-                        `  ${implementation}, ${sourceSize} B, ${dataMode}, ` +
-                        `iteration ${iteration + 1}/${options.iterations} ... `
-                    );
-                    const result = await runCase(
-                        implementation,
-                        sourceSize,
-                        dataMode,
-                        options
-                    );
-                    results.push(result);
-                    console.log(
-                        `${format(result.messagesPerSecond)} messages/s, ` +
-                        `${format(result.serverCpuPercent, 1)}% CPU`
-                    );
+    for (const transport of options.transports) {
+        for (const sourceSize of options.payloads) {
+            for (const dataMode of options.dataModes) {
+                for (let iteration = 0; iteration < options.iterations; iteration++) {
+                    const rotated = options.implementations.map((_, index) =>
+                        options.implementations[
+                            (index + iteration) % options.implementations.length
+                        ]);
+                    for (const implementation of rotated) {
+                        process.stdout.write(
+                            `  ${implementation}, ${transport}, ${sourceSize} B, ` +
+                            `${dataMode}, iteration ${iteration + 1}/` +
+                            `${options.iterations} ... `
+                        );
+                        const result = await runCase(
+                            implementation,
+                            transport,
+                            sourceSize,
+                            dataMode,
+                            options
+                        );
+                        results.push(result);
+                        console.log(
+                            `${format(result.messagesPerSecond)} messages/s, ` +
+                            `${format(result.serverCpuPercent, 1)}% CPU`
+                        );
+                    }
                 }
             }
         }

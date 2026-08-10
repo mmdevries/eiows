@@ -1,0 +1,45 @@
+name: Source package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Validate source package
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Validate release tag
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          package_version="$(node -p "require('./package.json').version")"
+          test "${RELEASE_TAG#v}" = "$package_version"
+      - run: npm ci
+      - run: npm test
+      - name: Pack source-only module
+        run: |
+          npm pack
+          archive="$(find . -maxdepth 1 -name 'eiows-*.tgz' -print -quit)"
+          test -n "$archive"
+          tar -tzf "$archive" | grep -q '^package/nodejs/src/native_transport.cpp$'
+          tar -tzf "$archive" | grep -q '^package/scripts/build.js$'
+          if tar -tzf "$archive" | grep -Eq '(^|/)prebuilds/|\.node$'; then
+            echo 'source package unexpectedly contains a native binary' >&2
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: npm-package
+          path: eiows-*.tgz
+          if-no-files-found: error

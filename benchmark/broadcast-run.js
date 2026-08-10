@@ -52,6 +52,8 @@ function parseArguments(argv) {
         connections: 100,
         payloads: [1024, 16 * 1024, 320 * 1024],
         dataModes: ['text', 'app-deflate'],
+        variants: variants.map((variant) => variant.id),
+        transports: ['tcp'],
         output: null
     };
     for (let index = 0; index < argv.length; index++) {
@@ -71,6 +73,10 @@ function parseArguments(argv) {
                 parsePositiveInteger(entry, option));
         } else if (option === '--data-modes') {
             options.dataModes = value.split(',').filter(Boolean);
+        } else if (option === '--variants') {
+            options.variants = value.split(',').filter(Boolean);
+        } else if (option === '--transports') {
+            options.transports = value.split(',').filter(Boolean);
         } else if (option === '--output') {
             options.output = path.resolve(value);
         } else {
@@ -81,7 +87,21 @@ function parseArguments(argv) {
         options.dataModes.some((mode) => !['text', 'app-deflate'].includes(mode))) {
         throw new TypeError('--data-modes supports text and app-deflate');
     }
+    const supportedVariants = new Set(variants.map((variant) => variant.id));
+    if (!options.variants.length ||
+        options.variants.some((variant) => !supportedVariants.has(variant))) {
+        throw new TypeError(`--variants supports ${[...supportedVariants].join(', ')}`);
+    }
+    if (!options.transports.length ||
+        options.transports.some((transport) => !['tcp', 'tls'].includes(transport))) {
+        throw new TypeError('--transports supports tcp and tls');
+    }
     return options;
+}
+
+function selectedVariants(options) {
+    const selected = new Set(options.variants);
+    return variants.filter((variant) => selected.has(variant.id));
 }
 
 function modulePathFor(implementation) {
@@ -90,7 +110,7 @@ function modulePathFor(implementation) {
 }
 
 class BroadcastServer {
-    constructor(variant, dataMode, sourceSize) {
+    constructor(variant, dataMode, sourceSize, transport) {
         this.variant = variant;
         this.nextRequestId = 1;
         this.pending = new Map();
@@ -108,7 +128,8 @@ class BroadcastServer {
                 modulePathFor(variant.implementation),
                 variant.sendMode,
                 dataMode,
-                String(sourceSize)
+                String(sourceSize),
+                transport
             ],
             {
                 stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
@@ -186,7 +207,10 @@ class BroadcastServer {
 
 function openClient(url, ready) {
     return new Promise((resolve, reject) => {
-        const client = new WebSocket(url, { perMessageDeflate: false });
+        const client = new WebSocket(url, {
+            perMessageDeflate: false,
+            rejectUnauthorized: false
+        });
         client.benchmarkMessages = 0;
         client.benchmarkValidated = false;
         client.benchmarkError = null;
@@ -288,14 +312,14 @@ async function closeClients(clients) {
     clients.length = 0;
 }
 
-async function runCase(variant, dataMode, sourceSize, options) {
-    const server = new BroadcastServer(variant, dataMode, sourceSize);
+async function runCase(variant, dataMode, sourceSize, transport, options) {
+    const server = new BroadcastServer(variant, dataMode, sourceSize, transport);
     const clients = [];
     try {
         const ready = await server.ready;
         await addClients(
             clients,
-            `ws://127.0.0.1:${ready.port}`,
+            `${transport === 'tls' ? 'wss' : 'ws'}://127.0.0.1:${ready.port}`,
             options.connections,
             ready
         );
@@ -322,6 +346,7 @@ async function runCase(variant, dataMode, sourceSize, options) {
             variant: variant.id,
             implementation: variant.implementation,
             sendMode: variant.sendMode,
+            transport,
             dataMode,
             sourceSize,
             wirePayloadBytes: ready.payloadBytes,
@@ -358,16 +383,19 @@ function aggregate(results, options) {
     const rows = [];
     for (const sourceSize of options.payloads) {
         for (const dataMode of options.dataModes) {
-            for (const variant of variants) {
+            for (const transport of options.transports) {
+              for (const variant of selectedVariants(options)) {
                 const matching = results.filter((result) =>
                     result.sourceSize === sourceSize &&
                     result.dataMode === dataMode &&
+                    result.transport === transport &&
                     result.variant === variant.id);
                 const value = (property) => median(
                     matching.map((result) => result[property])
                 );
                 rows.push({
                     variant: variant.id,
+                    transport,
                     source: `${formatNumber(sourceSize)} B`,
                     data: dataMode,
                     'wire payload B': formatNumber(value('wirePayloadBytes')),
@@ -395,6 +423,7 @@ function aggregate(results, options) {
                         1
                     )
                 });
+              }
             }
         }
     }
@@ -405,14 +434,18 @@ function currentSpeedups(results, options) {
     const rows = [];
     for (const sourceSize of options.payloads) {
         for (const dataMode of options.dataModes) {
+          for (const transport of options.transports) {
             const frameResults = results.filter((result) =>
                 result.sourceSize === sourceSize &&
                 result.dataMode === dataMode &&
+                result.transport === transport &&
                 result.variant === 'current-sendFrame');
             const sendResults = results.filter((result) =>
                 result.sourceSize === sourceSize &&
                 result.dataMode === dataMode &&
+                result.transport === transport &&
                 result.variant === 'current-send');
+            if (!frameResults.length || !sendResults.length) continue;
             const frameThroughput = median(frameResults.map((result) =>
                 result.deliveriesPerSecond));
             const sendThroughput = median(sendResults.map((result) =>
@@ -424,11 +457,13 @@ function currentSpeedups(results, options) {
             rows.push({
                 source: `${formatNumber(sourceSize)} B`,
                 data: dataMode,
+                transport,
                 'sendFrame throughput gain':
                     `${formatNumber((frameThroughput / sendThroughput - 1) * 100, 1)}%`,
                 'sendFrame CPU-efficiency gain':
                     `${formatNumber((frameEfficiency / sendEfficiency - 1) * 100, 1)}%`
             });
+          }
         }
     }
     return rows;
@@ -454,11 +489,13 @@ async function main() {
 
     for (const sourceSize of options.payloads) {
         for (const dataMode of options.dataModes) {
+          for (const transport of options.transports) {
             for (let iteration = 0; iteration < options.iterations; iteration++) {
-                const rotated = variants.map((_, index) =>
-                    variants[(index + iteration) % variants.length]);
+                const selected = selectedVariants(options);
+                const rotated = selected.map((_, index) =>
+                    selected[(index + iteration) % selected.length]);
                 for (const variant of rotated) {
-                    const label = `${variant.id}, ${sourceSize} B, ${dataMode}, ` +
+                    const label = `${variant.id}, ${transport}, ${sourceSize} B, ${dataMode}, ` +
                         `iteration ${iteration + 1}/${options.iterations}`;
                     process.stdout.write(`  ${label} ... `);
                     const start = performance.now();
@@ -466,6 +503,7 @@ async function main() {
                         variant,
                         dataMode,
                         sourceSize,
+                        transport,
                         options
                     );
                     results.push(result);
@@ -476,6 +514,7 @@ async function main() {
                     );
                 }
             }
+          }
         }
     }
 

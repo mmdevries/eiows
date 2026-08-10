@@ -110,7 +110,8 @@ to benchmark the legacy eiows 10.0.1 direct-string behavior.
 node --expose-gc benchmark/ingress-run.js
 node --expose-gc benchmark/ingress-run.js --iterations 1 --duration 1 \
   --warmup 0.25 --connections 20 --payloads 1024 \
-  --data-modes text,app-deflate --source-content mixed-utf8 \
+  --data-modes text,app-deflate --transports tcp,tls \
+  --source-content mixed-utf8 \
   --server-text-output buffer --text-consumption string
 ```
 

@@ -1,6 +1,12 @@
 import { EventEmitter } from "node:events";
 import { Duplex } from "node:stream";
 
+export interface SocketInfo {
+    readonly remoteAddress?: string;
+    readonly remotePort?: number;
+    readonly remoteFamily?: string;
+}
+
 export type WebSocketMessage = string | Buffer;
 export interface SendOptions {
     compress?: boolean;
@@ -44,7 +50,8 @@ export class WebSocket extends EventEmitter {
     on(eventName: string, listener: (...args: any[]) => void): this;
     once(eventName: string, listener: (...args: any[]) => void): this;
     removeListener(eventName: string, listener: (...args: any[]) => void): this;
-    readonly _socket: Duplex;
+    /** Copied peer metadata; the Node Duplex is released after native takeover. */
+    readonly _socket: SocketInfo;
     send(message: string | Buffer | ArrayBuffer | ArrayBufferView, cb?: (err?: Error) => void): void;
     send(message: string | Buffer | ArrayBuffer | ArrayBufferView, options: SendOptions | null, cb?: (err?: Error) => void): void;
     close(code?: number, data?: string | Buffer | ArrayBuffer | ArrayBufferView): void;

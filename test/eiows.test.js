@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const asyncHooks = require('node:async_hooks');
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -9,11 +10,12 @@ const net = require('node:net');
 const path = require('node:path');
 const tls = require('node:tls');
 const test = require('node:test');
+const { Worker } = require('node:worker_threads');
 const zlib = require('node:zlib');
 const { Server: EngineIo } = require('engine.io');
 
 const eiows = require('..');
-const native = require('node-gyp-build')(path.join(__dirname, '..'));
+const native = require('../dist/eiows.node');
 
 const fixtures = path.join(__dirname, 'fixtures');
 const tlsOptions = {
@@ -220,6 +222,11 @@ async function runEchoCase(secure, textAsString = false) {
     server.on('upgrade', (request, socket, head) => {
         wsServer.handleUpgrade(request, socket, head, (webSocket, callbackRequest) => {
             assert.equal(callbackRequest, request);
+            assert.equal(webSocket._nativeTransport, true);
+            assert.equal(webSocket._transportSocket, null);
+            assert.notEqual(webSocket._socket, socket);
+            assert.equal(socket.destroyed, true);
+            assert.equal(socket._handle, null);
             webSocket.on('error', () => {});
             webSocket.on('message', (message, isBinary) => {
                 messages.push([message, isBinary]);
@@ -277,9 +284,519 @@ async function runEchoCase(secure, textAsString = false) {
     await closeServer(server);
 }
 
-test('keeps the HTTP socket in Node and consumes upgradeHead', () => runEchoCase(false));
-test('keeps the TLS socket in Node without accessing SSLPointer', () => runEchoCase(true));
+test('takes ownership from Node TCP and consumes upgradeHead natively', () => runEchoCase(false));
+test('takes ownership of the descriptor and SSL state from TLSWrap', () => runEchoCase(true));
 test('can restore legacy string messages with textAsString', () => runEchoCase(false, true));
+
+test('dispatches owned transport events through their AsyncResource', async () => {
+    const server = http.createServer();
+    const wsServer = new eiows.Server({});
+    const initialized = [];
+    let ownedAsyncId = null;
+    let resolveDestroyed;
+    const resourceDestroyed = new Promise((resolve) => { resolveDestroyed = resolve; });
+    let observed = null;
+    let resolveMessage;
+    const message = new Promise((resolve) => { resolveMessage = resolve; });
+    const hook = asyncHooks.createHook({
+        init(asyncId, type, triggerAsyncId, resource) {
+            if (type === 'eiows.ownedTransport') {
+                ownedAsyncId = asyncId;
+                initialized.push({ asyncId, triggerAsyncId, resource });
+            }
+        },
+        destroy(asyncId) {
+            if (asyncId === ownedAsyncId) resolveDestroyed();
+        }
+    });
+    hook.enable();
+
+    server.on('upgrade', (request, socket, head) => {
+        wsServer.handleUpgrade(request, socket, head, (webSocket) => {
+            webSocket.on('error', () => {});
+            webSocket.on('message', () => {
+                observed = {
+                    asyncId: asyncHooks.executionAsyncId(),
+                    resource: asyncHooks.executionAsyncResource()
+                };
+                resolveMessage();
+            });
+        });
+    });
+
+    const port = await listen(server);
+    const socket = net.connect({ port, host: '127.0.0.1' });
+    try {
+        await new Promise((resolve, reject) => {
+            socket.once('connect', resolve);
+            socket.once('error', reject);
+        });
+        socket.write(Buffer.concat([
+            Buffer.from(websocketRequest()),
+            clientFrame('async-context')
+        ]));
+        await message;
+
+        assert.equal(initialized.length, 1);
+        assert.equal(observed.asyncId, initialized[0].asyncId);
+        assert.equal(observed.resource, initialized[0].resource);
+        await destroySocket(socket);
+        await closeServer(server);
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(
+                () => reject(new Error('timed out waiting for AsyncResource destroy')),
+                1000
+            );
+            resourceDestroyed.then(() => {
+                clearTimeout(timeout);
+                resolve();
+            }, reject);
+        });
+    } finally {
+        hook.disable();
+        if (!socket.destroyed) await destroySocket(socket);
+        if (server.listening) await closeServer(server);
+    }
+});
+
+test('owns an SNI TLS context without disturbing regular Node TLS connections', async () => {
+    const alternateContext = tls.createSecureContext(tlsOptions);
+    const server = https.createServer({
+        ...tlsOptions,
+        SNICallback(servername, callback) {
+            callback(null, servername === 'owned.local' ? alternateContext : null);
+        }
+    }, (request, response) => {
+        response.end('node-tls-ok');
+    });
+    const wsServer = new eiows.Server({ perMessageDeflate: false });
+    let ownedWebSocket;
+    server.on('upgrade', (request, socket, head) => {
+        wsServer.handleUpgrade(request, socket, head, (webSocket) => {
+            ownedWebSocket = webSocket;
+            webSocket.on('error', () => {});
+            webSocket.on('message', (message) => webSocket.send(message));
+        });
+    });
+
+    const port = await listen(server);
+    const ownedSocket = tls.connect({
+        port,
+        host: '127.0.0.1',
+        servername: 'owned.local',
+        rejectUnauthorized: false
+    });
+    const nextFrame = createServerFrameReader(ownedSocket);
+    await new Promise((resolve, reject) => {
+        ownedSocket.once('secureConnect', resolve);
+        ownedSocket.once('error', reject);
+    });
+    ownedSocket.write(Buffer.concat([
+        Buffer.from(websocketRequest()),
+        clientFrame('owned-sni')
+    ]));
+    const echoed = await nextFrame();
+    assert.equal(echoed.payload.toString(), 'owned-sni');
+    assert.equal(ownedWebSocket._nativeTransport, true);
+    assert.equal(ownedWebSocket._transportSocket, null);
+
+    const regularBody = await new Promise((resolve, reject) => {
+        https.get({
+            port,
+            host: '127.0.0.1',
+            servername: 'node.local',
+            rejectUnauthorized: false
+        }, (response) => {
+            const chunks = [];
+            response.on('data', (chunk) => chunks.push(chunk));
+            response.once('end', () => resolve(Buffer.concat(chunks).toString()));
+        }).once('error', reject);
+    });
+    assert.equal(regularBody, 'node-tls-ok');
+
+    await destroySocket(ownedSocket);
+    await new Promise((resolve) => wsServer.close(resolve));
+    await closeServer(server);
+});
+
+async function runVectoredFrameCase(secure) {
+    const server = secure ? https.createServer(tlsOptions) : http.createServer();
+    const wsServer = new eiows.Server({ maxPayload: 1024 });
+    let resolveWrite;
+    let rejectWrite;
+    const writeFinished = new Promise((resolve, reject) => {
+        resolveWrite = resolve;
+        rejectWrite = reject;
+    });
+
+    server.on('upgrade', (request, socket, head) => {
+        wsServer.handleUpgrade(request, socket, head, (webSocket) => {
+            assert.equal(webSocket._nativeTransport, true);
+            webSocket.on('error', rejectWrite);
+            webSocket._sender.sendFrame([
+                Buffer.from([0x82, 0x0b]),
+                Buffer.from('vector'),
+                new DataView(Uint8Array.from([0x2d, 0x70]).buffer),
+                'ath'
+            ], (error) => error ? rejectWrite(error) : resolveWrite());
+        });
+    });
+
+    const port = await listen(server);
+    const socket = connect(port, secure);
+    const nextFrame = createServerFrameReader(socket);
+    await new Promise((resolve, reject) => {
+        socket.once(secure ? 'secureConnect' : 'connect', resolve);
+        socket.once('error', reject);
+    });
+    socket.write(websocketRequest());
+
+    const frame = await nextFrame();
+    assert.equal(frame.opCode, 2);
+    assert.equal(frame.payload.toString(), 'vector-path');
+    await writeFinished;
+
+    await destroySocket(socket);
+    await new Promise((resolve) => wsServer.close(resolve));
+    await closeServer(server);
+}
+
+test('writes multi-part native TCP vectors in one request', () => runVectoredFrameCase(false));
+test('serializes multi-part native vectors through owned TLS', () => runVectoredFrameCase(true));
+
+test('batches frame lists larger than the platform I/O-vector limit', async () => {
+    const server = http.createServer();
+    const wsServer = new eiows.Server({ maxPayload: 4096 });
+    const payloadLength = 2048;
+    let resolveWrite;
+    let rejectWrite;
+    const writeFinished = new Promise((resolve, reject) => {
+        resolveWrite = resolve;
+        rejectWrite = reject;
+    });
+    server.on('upgrade', (request, socket, head) => {
+        wsServer.handleUpgrade(request, socket, head, (webSocket) => {
+            webSocket.on('error', rejectWrite);
+            const header = Buffer.alloc(4);
+            header[0] = 0x82;
+            header[1] = 126;
+            header.writeUInt16BE(payloadLength, 2);
+            const parts = [header];
+            for (let index = 0; index < payloadLength; index++) {
+                parts.push(Buffer.from([index & 0xff]));
+            }
+            webSocket._sender.sendFrame(
+                parts,
+                (error) => error ? rejectWrite(error) : resolveWrite()
+            );
+        });
+    });
+
+    const port = await listen(server);
+    const socket = connect(port, false);
+    const nextFrame = createServerFrameReader(socket);
+    await new Promise((resolve, reject) => {
+        socket.once('connect', resolve);
+        socket.once('error', reject);
+    });
+    socket.write(websocketRequest());
+    const frame = await nextFrame();
+    assert.equal(frame.payload.length, payloadLength);
+    for (let index = 0; index < payloadLength; index++) {
+        assert.equal(frame.payload[index], index & 0xff);
+    }
+    await writeFinished;
+
+    await destroySocket(socket);
+    await new Promise((resolve) => wsServer.close(resolve));
+    await closeServer(server);
+});
+
+async function runPeerCloseCase(secure) {
+    const server = secure ? https.createServer(tlsOptions) : http.createServer();
+    const wsServer = new eiows.Server({ maxPayload: 1024 });
+    let resolveCloseEvent;
+    const closeEventPromise = new Promise((resolve) => {
+        resolveCloseEvent = resolve;
+    });
+    server.on('upgrade', (request, socket, head) => {
+        wsServer.handleUpgrade(request, socket, head, (webSocket) => {
+            assert.equal(webSocket._nativeTransport, true);
+            webSocket.on('error', () => {});
+            webSocket.once('close', (code, reason) => {
+                resolveCloseEvent([code, reason]);
+            });
+        });
+    });
+
+    const port = await listen(server);
+    const socket = connect(port, secure);
+    const nextFrame = createServerFrameReader(socket);
+    await new Promise((resolve, reject) => {
+        socket.once(secure ? 'secureConnect' : 'connect', resolve);
+        socket.once('error', reject);
+    });
+
+    const closePayload = Buffer.alloc(5);
+    closePayload.writeUInt16BE(1000, 0);
+    closePayload.write('bye', 2);
+    socket.write(Buffer.concat([
+        Buffer.from(websocketRequest()),
+        clientFrame(closePayload, { opCode: 8 })
+    ]));
+
+    const echoedClose = await nextFrame();
+    assert.equal(echoedClose.opCode, 8);
+    assert.equal(echoedClose.payload.readUInt16BE(0), 1000);
+    assert.equal(echoedClose.payload.subarray(2).toString(), 'bye');
+    await new Promise((resolve) => socket.once('close', resolve));
+    assert.deepEqual(await closeEventPromise, [1000, 'bye']);
+
+    await new Promise((resolve) => wsServer.close(resolve));
+    await closeServer(server);
+}
+
+test('flushes a peer close frame before ending native TCP', () => runPeerCloseCase(false));
+test('flushes a peer close frame before ending native TLS', () => runPeerCloseCase(true));
+
+test('serializes native TLS writes and reports only remaining queued bytes', async () => {
+    const server = https.createServer(tlsOptions);
+    const wsServer = new eiows.Server({ maxPayload: 1024 * 1024 });
+    const writeCount = 32;
+    const callbackOrder = [];
+    let queuedAmount = 0;
+    let resolveCallbacks;
+    const callbacksDone = new Promise((resolve) => {
+        resolveCallbacks = resolve;
+    });
+
+    server.on('upgrade', (request, socket, head) => {
+        wsServer.handleUpgrade(request, socket, head, (webSocket) => {
+            assert.equal(webSocket._nativeTransport, true);
+            webSocket.on('error', () => {});
+            for (let index = 0; index < writeCount; index++) {
+                const payload = Buffer.alloc(16 * 1024, index);
+                webSocket.send(payload, (error) => {
+                    assert.ifError(error);
+                    callbackOrder.push(index);
+                    if (callbackOrder.length === writeCount) resolveCallbacks();
+                });
+            }
+            queuedAmount = webSocket.bufferedAmount;
+        });
+    });
+
+    const port = await listen(server);
+    const socket = connect(port, true);
+    const nextFrame = createServerFrameReader(socket);
+    await new Promise((resolve, reject) => {
+        socket.once('secureConnect', resolve);
+        socket.once('error', reject);
+    });
+    socket.write(websocketRequest());
+
+    for (let index = 0; index < writeCount; index++) {
+        const frame = await nextFrame();
+        assert.equal(frame.opCode, 2);
+        assert.equal(frame.payload.length, 16 * 1024);
+        assert.equal(frame.payload[0], index);
+    }
+    await callbacksDone;
+    assert.ok(queuedAmount >= 0);
+    assert.ok(queuedAmount <= writeCount * (16 * 1024 + 14));
+    assert.deepEqual(callbackOrder, Array.from({ length: writeCount }, (_, index) => index));
+
+    await destroySocket(socket);
+    await new Promise((resolve) => wsServer.close(resolve));
+    await closeServer(server);
+});
+
+test('retains TLS ciphertext and callbacks across raw socket backpressure', async () => {
+    const server = https.createServer(tlsOptions);
+    const wsServer = new eiows.Server({ maxPayload: 16 * 1024 * 1024 });
+    const writeCount = 48;
+    const payloadLength = 128 * 1024;
+    let webSocket;
+    let callbacks = 0;
+    let resolveCallbacks;
+    let rejectCallbacks;
+    const callbacksDone = new Promise((resolve, reject) => {
+        resolveCallbacks = resolve;
+        rejectCallbacks = reject;
+    });
+    server.on('upgrade', (request, socket, head) => {
+        wsServer.handleUpgrade(request, socket, head, (value) => {
+            webSocket = value;
+            webSocket.on('error', rejectCallbacks);
+            for (let index = 0; index < writeCount; index++) {
+                webSocket.send(Buffer.alloc(payloadLength, index), (error) => {
+                    if (error) {
+                        rejectCallbacks(error);
+                        return;
+                    }
+                    callbacks++;
+                    if (callbacks === writeCount) resolveCallbacks();
+                });
+            }
+        });
+    });
+
+    const port = await listen(server);
+    const socket = connect(port, true);
+    const nextFrame = createServerFrameReader(socket);
+    await new Promise((resolve, reject) => {
+        socket.once('secureConnect', resolve);
+        socket.once('error', reject);
+    });
+    socket.pause();
+    socket.write(websocketRequest());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.ok(webSocket, 'expected the TLS WebSocket upgrade to complete');
+    assert.ok(callbacks < writeCount, 'backpressured writes completed prematurely');
+    assert.ok(webSocket.bufferedAmount > 0, 'expected queued plaintext under backpressure');
+
+    socket.resume();
+    for (let index = 0; index < writeCount; index++) {
+        const frame = await nextFrame(5000);
+        assert.equal(frame.opCode, 2);
+        assert.equal(frame.payload.length, payloadLength);
+        assert.equal(frame.payload[0], index);
+        assert.equal(frame.payload[payloadLength - 1], index);
+    }
+    await callbacksDone;
+    assert.equal(webSocket.bufferedAmount, 0);
+
+    await destroySocket(socket);
+    await new Promise((resolve) => wsServer.close(resolve));
+    await closeServer(server);
+});
+
+async function runDetachedArrayBufferWriteCase(secure) {
+    const server = secure ? https.createServer(tlsOptions) : http.createServer();
+    const payloadLength = 4 * 1024 * 1024;
+    const wsServer = new eiows.Server({ maxPayload: payloadLength + 1024 });
+    let resolveSubmitted;
+    let rejectSubmitted;
+    const submitted = new Promise((resolve, reject) => {
+        resolveSubmitted = resolve;
+        rejectSubmitted = reject;
+    });
+    let resolveWrite;
+    const writeFinished = new Promise((resolve) => {
+        resolveWrite = resolve;
+    });
+
+    server.on('upgrade', (request, socket, head) => {
+        wsServer.handleUpgrade(request, socket, head, (webSocket) => {
+            webSocket.on('error', rejectSubmitted);
+            const payload = new ArrayBuffer(payloadLength);
+            const bytes = new Uint8Array(payload);
+            bytes[0] = 0x31;
+            bytes[payloadLength - 1] = 0x7a;
+            webSocket.send(payload, (error) => {
+                if (error) rejectSubmitted(error);
+                else resolveWrite();
+            });
+            structuredClone(payload, { transfer: [payload] });
+            assert.equal(payload.byteLength, 0);
+            resolveSubmitted();
+        });
+    });
+
+    const port = await listen(server);
+    const socket = connect(port, secure);
+    const nextFrame = createServerFrameReader(socket);
+    await new Promise((resolve, reject) => {
+        socket.once(secure ? 'secureConnect' : 'connect', resolve);
+        socket.once('error', reject);
+    });
+    socket.pause();
+    socket.write(websocketRequest());
+    await submitted;
+    socket.resume();
+
+    const frame = await nextFrame(5000);
+    assert.equal(frame.opCode, 2);
+    assert.equal(frame.payload.length, payloadLength);
+    assert.equal(frame.payload[0], 0x31);
+    assert.equal(frame.payload[payloadLength - 1], 0x7a);
+    await writeFinished;
+
+    await destroySocket(socket);
+    await new Promise((resolve) => wsServer.close(resolve));
+    await closeServer(server);
+}
+
+test('pins detached ArrayBuffer storage across native TCP backpressure', () =>
+    runDetachedArrayBufferWriteCase(false));
+test('pins detached ArrayBuffer storage across native TLS backpressure', () =>
+    runDetachedArrayBufferWriteCase(true));
+
+test('cleans up active owned TCP and TLS transports when a Worker exits', async () => {
+    for (const secure of [false, true]) {
+        const worker = new Worker(`
+            'use strict';
+            const http = require('node:http');
+            const https = require('node:https');
+            const { parentPort, workerData } = require('node:worker_threads');
+            const eiows = require(workerData.modulePath);
+            const server = workerData.secure
+                ? https.createServer({ key: workerData.key, cert: workerData.cert })
+                : http.createServer();
+            const wsServer = new eiows.Server({ perMessageDeflate: false });
+            server.on('upgrade', (request, socket, head) => {
+                wsServer.handleUpgrade(request, socket, head, (webSocket) => {
+                    webSocket.on('error', () => {});
+                    parentPort.postMessage({ type: 'upgraded' });
+                });
+            });
+            server.listen(0, '127.0.0.1', () => {
+                parentPort.postMessage({ type: 'listening', port: server.address().port });
+            });
+        `, {
+            eval: true,
+            workerData: {
+                modulePath: require.resolve('..'),
+                secure,
+                key: tlsOptions.key,
+                cert: tlsOptions.cert
+            }
+        });
+        const messages = [];
+        const waiters = [];
+        worker.on('message', (message) => {
+            const waiter = waiters.shift();
+            if (waiter) waiter.resolve(message);
+            else messages.push(message);
+        });
+        const nextMessage = () => messages.length
+            ? Promise.resolve(messages.shift())
+            : new Promise((resolve, reject) => waiters.push({ resolve, reject }));
+
+        const listening = await nextMessage();
+        assert.equal(listening.type, 'listening');
+        const socket = connect(listening.port, secure);
+        await new Promise((resolve, reject) => {
+            socket.once(secure ? 'secureConnect' : 'connect', resolve);
+            socket.once('error', reject);
+        });
+        socket.write(websocketRequest());
+        const upgraded = await nextMessage();
+        assert.equal(upgraded.type, 'upgraded');
+
+        let terminationTimer;
+        const terminationTimeout = new Promise((_, reject) => {
+            terminationTimer = setTimeout(
+                () => reject(new Error('timed out terminating Worker with owned transport')),
+                3000
+            );
+        });
+        const exitCode = await Promise.race([worker.terminate(), terminationTimeout]);
+        clearTimeout(terminationTimer);
+        assert.equal(exitCode, 1);
+        socket.destroy();
+    }
+});
 
 test('Server defaults to ws-compatible Buffer text for Engine.IO', async () => {
     const wsServer = new eiows.Server({ perMessageDeflate: false });

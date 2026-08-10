@@ -2,7 +2,6 @@
 
 const { createHash } = require('node:crypto');
 const { EventEmitter } = require('node:events');
-const path = require('node:path');
 
 const DEFAULT_PAYLOAD_LIMIT = 16777216;
 const CLOSE_TIMEOUT = 15000;
@@ -24,10 +23,10 @@ eiows.CLOSED = 3;
 
 const native = (() => {
     try {
-        return require('node-gyp-build')(path.join(__dirname, '..'));
+        return require('./eiows.node');
     } catch (error) {
         throw new Error(error.toString() + '\n\nNo compatible eiows native binary was found. ' +
-            'Please install a supported C++17 compiler and rebuild the module from source.');
+            'Please install a supported C++20 compiler and rebuild the module from source.');
     }
 })();
 
@@ -145,6 +144,13 @@ class WebSocket extends EventEmitter {
         this._closeTimer = null;
         this._closed = false;
         this._socketError = null;
+        this._nativeTransport = false;
+        this._nativeActive = false;
+        this._socketInfo = {
+            remoteAddress: socket.remoteAddress,
+            remotePort: socket.remotePort,
+            remoteFamily: socket.remoteFamily
+        };
 
         // Engine.IO can attach frames pre-encoded with ws.Sender.frame().
         // Writing the header and payload directly avoids native re-framing and
@@ -153,30 +159,87 @@ class WebSocket extends EventEmitter {
             sendFrame: (list, callback) => this._sendFrameList(list, callback)
         };
 
-        socket.on('data', (data) => this._consume(data));
-        socket.once('error', (error) => this._onSocketError(error));
-        socket.once('close', () => this._finalizeClose());
-        socket.once('end', () => {
-            if (this.readyState === eiows.OPEN) {
-                this.readyState = eiows.CLOSING;
-            }
-            // Complete our half of the stream when the peer disappears
-            // without a WebSocket close frame; otherwise upgraded HTTP
-            // sockets may remain half-open until the close timeout.
-            if (!socket.destroyed) socket.end();
-        });
+        if (socket._handle) {
+            this._nativeTransport = native.attachTransport(
+                external,
+                socket._handle,
+                this,
+                textAsBuffer,
+                Boolean(socket.encrypted)
+            );
+        }
+        if (!this._nativeTransport) {
+            socket.once('error', (error) => this._onSocketError(error));
+            socket.once('close', () => this._finalizeClose());
+            socket.once('end', () => {
+                if (this.readyState === eiows.OPEN) {
+                    this.readyState = eiows.CLOSING;
+                }
+                if (!socket.destroyed) socket.end();
+            });
+            socket.on('data', (data) => this._consume(data));
+        }
     }
 
     get _socket() {
-        return this._transportSocket;
+        return this._transportSocket || this._socketInfo;
     }
 
     get bufferedAmount() {
+        if (this._nativeTransport && this.external) {
+            return native.transportBufferedAmount(this.external);
+        }
         return this._transportSocket && this._transportSocket.writableLength || 0;
+    }
+
+    _completeNativeUpgrade(response, upgradeHead, callback, request) {
+        const socket = this._transportSocket;
+        let transferError = null;
+        const onError = (error) => {
+            transferError = error;
+        };
+        socket.once('error', onError);
+        socket.once('close', () => {
+            socket.removeListener('error', onError);
+            this._transportSocket = null;
+            const activate = () => {
+                if (!this.external || this.readyState === eiows.CLOSED) return;
+                try {
+                    const status = native.activateTransport(this.external);
+                    if (status < 0) {
+                        throw new Error(`native socket ownership activation failed (${status})`);
+                    }
+                    this._nativeActive = true;
+                    if (transferError) throw transferError;
+                    if (!this._writeFrame(response)) return;
+                    callback(this, request);
+                    if (upgradeHead && upgradeHead.length) this._consume(upgradeHead);
+                } catch (error) {
+                    this._fail(error);
+                }
+            };
+            if (socket.encrypted) {
+                // Node schedules TLSWrap.destroySSL() from its close listener.
+                // Activate one turn later so the retained SSL/BIO state has a
+                // single active driver throughout the ownership transition.
+                setImmediate(activate);
+            } else {
+                activate();
+            }
+        });
+        setImmediate(() => socket.destroy());
     }
 
     _consume(data) {
         if (!this.external || this.readyState === eiows.CLOSED) return;
+        if (this._nativeTransport) {
+            try {
+                native.feedTransport(this.external, data);
+            } catch (error) {
+                this._fail(error);
+            }
+            return;
+        }
         let events;
         try {
             events = native.consume(this.external, data, this._textAsBuffer);
@@ -203,8 +266,62 @@ class WebSocket extends EventEmitter {
         }
     }
 
+    _onNativeMessage(message, isBinary) {
+        if (this.readyState === eiows.OPEN) this.emit('message', message, isBinary);
+    }
+
+    _onNativeClose(code, reason) {
+        if (this.readyState === eiows.CLOSED) return;
+        this._closeCode = code;
+        this._closeReason = reason;
+        this.readyState = eiows.CLOSING;
+        this._startCloseTimeout();
+    }
+
+    _onNativeClosed() {
+        this._finalizeClose();
+    }
+
+    _onNativeTransportError(message) {
+        if (this.readyState === eiows.CLOSED) return;
+        this.readyState = eiows.CLOSING;
+        const error = new Error(`native socket transport failed: ${message}`);
+        if (!this._socketError) {
+            this._socketError = error;
+            this.emit('error', error);
+        }
+    }
+
+    _finishNativeWrite(status, callback) {
+        if (status >= 0) {
+            if (status === 0 && callback) process.nextTick(callback);
+            return true;
+        }
+        const error = new Error(`native socket write failed (${status})`);
+        if (callback) process.nextTick(callback, error);
+        this._fail(error);
+        return false;
+    }
+
     _writeFrame(frame, callback) {
         const socket = this._transportSocket;
+        if (this._nativeTransport) {
+            if (!this._nativeActive || !this.external) {
+                const error = new Error('native socket transport is not active');
+                if (callback) process.nextTick(callback, error);
+                return false;
+            }
+            try {
+                return this._finishNativeWrite(
+                    native.writeTransportFrames(this.external, [frame], callback),
+                    callback
+                );
+            } catch (error) {
+                if (callback) process.nextTick(callback, error);
+                this._fail(error);
+                return false;
+            }
+        }
         if (!socket || socket.destroyed || !socket.writable) {
             const error = new Error('socket is not writable');
             if (callback) process.nextTick(callback, error);
@@ -224,14 +341,32 @@ class WebSocket extends EventEmitter {
 
     _sendFrameList(list, callback) {
         const socket = this._transportSocket;
-        if (this.readyState !== eiows.OPEN ||
-            !socket || socket.destroyed || !socket.writable) {
+        if (this.readyState !== eiows.OPEN || !this.external ||
+            (!this._nativeTransport && (!socket || socket.destroyed || !socket.writable))) {
             if (callback) process.nextTick(callback, new Error('socket is not writable'));
             return;
         }
         if (!Array.isArray(list) || !list.length ||
             list.some((part) => typeof part !== 'string' && !ArrayBuffer.isView(part))) {
             if (callback) process.nextTick(callback, new TypeError('invalid pre-encoded frame'));
+            return;
+        }
+
+        if (this._nativeTransport) {
+            if (!this._nativeActive) {
+                if (callback) process.nextTick(
+                    callback, new Error('native socket transport is not active'));
+                return;
+            }
+            try {
+                this._finishNativeWrite(
+                    native.writeTransportFrames(this.external, list, callback),
+                    callback
+                );
+            } catch (error) {
+                if (callback) process.nextTick(callback, error);
+                this._fail(error);
+            }
             return;
         }
 
@@ -301,7 +436,10 @@ class WebSocket extends EventEmitter {
             this._socketError = error;
             this.emit('error', error);
         }
-        if (this._transportSocket && !this._transportSocket.destroyed) {
+        if (this._nativeTransport && this.external) {
+            native.terminateTransport(this.external);
+            if (!this._nativeActive) this._finalizeClose();
+        } else if (this._transportSocket && !this._transportSocket.destroyed) {
             this._transportSocket.destroy();
         } else {
             this._finalizeClose();
@@ -311,7 +449,9 @@ class WebSocket extends EventEmitter {
     _startCloseTimeout() {
         if (this._closeTimer) return;
         this._closeTimer = setTimeout(() => {
-            if (this._transportSocket && !this._transportSocket.destroyed) {
+            if (this._nativeTransport && this.external) {
+                native.terminateTransport(this.external);
+            } else if (this._transportSocket && !this._transportSocket.destroyed) {
                 this._transportSocket.destroy();
             }
         }, CLOSE_TIMEOUT);
@@ -330,6 +470,7 @@ class WebSocket extends EventEmitter {
             native.dispose(this.external);
             this.external = null;
         }
+        this._nativeActive = false;
         const server = this._server;
         this._server = null;
         if (server) server._remove(this);
@@ -352,6 +493,25 @@ class WebSocket extends EventEmitter {
         const compress = this.compressEnabled &&
             (!options || options.compress !== false) &&
             payloadLength >= this.compressThreshold;
+
+        if (this._nativeTransport) {
+            try {
+                this._finishNativeWrite(
+                    native.writeTransportMessage(
+                        this.external,
+                        message,
+                        binary ? eiows.OPCODE_BINARY : eiows.OPCODE_TEXT,
+                        compress,
+                        callback
+                    ),
+                    callback
+                );
+            } catch (error) {
+                if (callback) process.nextTick(callback, error);
+                else this._fail(error);
+            }
+            return;
+        }
 
         // Server frames are not masked. For the common uncompressed path,
         // write the small header and original payload as a corked vector so
@@ -406,19 +566,31 @@ class WebSocket extends EventEmitter {
         }
 
         this.readyState = eiows.CLOSING;
-        const frame = native.closeFrame(this.external, code, reason);
         this._startCloseTimeout();
-        if (frame) {
-            this._writeFrame(frame);
-        } else if (this._transportSocket && !this._transportSocket.destroyed) {
-            this._transportSocket.end();
+        if (this._nativeTransport) {
+            try {
+                const status = native.writeTransportClose(this.external, code, reason);
+                if (status < 0) native.terminateTransport(this.external);
+            } catch (error) {
+                this._fail(error);
+            }
+        } else {
+            const frame = native.closeFrame(this.external, code, reason);
+            if (frame) {
+                this._writeFrame(frame);
+            } else if (this._transportSocket && !this._transportSocket.destroyed) {
+                this._transportSocket.end();
+            }
         }
     }
 
     terminate() {
         if (this.readyState === eiows.CLOSED) return;
         this.readyState = eiows.CLOSING;
-        if (this._transportSocket && !this._transportSocket.destroyed) {
+        if (this._nativeTransport && this.external) {
+            native.terminateTransport(this.external);
+            if (!this._nativeActive) this._finalizeClose();
+        } else if (this._transportSocket && !this._transportSocket.destroyed) {
             this._transportSocket.destroy();
         } else {
             this._finalizeClose();
@@ -562,10 +734,15 @@ class Server extends EventEmitter {
         this._clients.add(webSocket);
 
         try {
-            socket.write(headers.join('\r\n') + '\r\n\r\n');
-            callback(webSocket, request);
-            if (upgradeHead && upgradeHead.length) webSocket._consume(upgradeHead);
-            if (!socket.destroyed && typeof socket.resume === 'function') socket.resume();
+            const response = headers.join('\r\n') + '\r\n\r\n';
+            if (webSocket._nativeTransport) {
+                webSocket._completeNativeUpgrade(response, upgradeHead, callback, request);
+            } else {
+                socket.write(response);
+                callback(webSocket, request);
+                if (upgradeHead && upgradeHead.length) webSocket._consume(upgradeHead);
+                if (!socket.destroyed && typeof socket.resume === 'function') socket.resume();
+            }
         } catch (error) {
             webSocket.terminate();
             throw error;

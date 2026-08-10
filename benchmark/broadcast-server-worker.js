@@ -1,15 +1,18 @@
 'use strict';
 
 const http = require('node:http');
+const https = require('node:https');
+const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 
-const [implementation, modulePath, sendMode, dataMode, sourceSizeArgument] =
+const [implementation, modulePath, sendMode, dataMode, sourceSizeArgument, transport] =
     process.argv.slice(2);
 const sourceSize = Number(sourceSizeArgument);
 
 if (!implementation || !modulePath || !['send', 'sendFrame'].includes(sendMode) ||
     !['text', 'app-deflate'].includes(dataMode) ||
+    !['tcp', 'tls'].includes(transport) ||
     !Number.isInteger(sourceSize) || sourceSize <= 0 ||
     typeof process.send !== 'function') {
     throw new Error('broadcast-server-worker must be started by benchmark/broadcast-run.js');
@@ -90,7 +93,12 @@ async function main() {
         maxPayload: 16 * 1024 * 1024,
         perMessageDeflate: false
     });
-    const httpServer = http.createServer();
+    const httpServer = transport === 'tls'
+        ? https.createServer({
+            key: fs.readFileSync(path.join(__dirname, '..', 'test', 'fixtures', 'key.pem')),
+            cert: fs.readFileSync(path.join(__dirname, '..', 'test', 'fixtures', 'cert.pem'))
+        })
+        : http.createServer();
 
     httpServer.on('upgrade', (request, socket, head) => {
         websocketServer.handleUpgrade(request, socket, head, (webSocket) => {
@@ -300,6 +308,7 @@ async function main() {
                 sourceSize,
                 payloadBytes,
                 binary,
+                transport,
                 compressionRatio: payloadBytes / sourceSize,
                 frameParts: preEncodedFrame.length,
                 frameBytes: preEncodedFrame.reduce(

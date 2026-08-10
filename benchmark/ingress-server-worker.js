@@ -1,6 +1,8 @@
 'use strict';
 
 const http = require('node:http');
+const https = require('node:https');
+const fs = require('node:fs');
 const path = require('node:path');
 
 const [
@@ -9,7 +11,8 @@ const [
     binaryArgument,
     payloadBytesArgument,
     textConsumption = 'native',
-    serverTextOutput = 'buffer'
+    serverTextOutput = 'buffer',
+    transport = 'tcp'
 ] =
     process.argv.slice(2);
 const expectedBinary = binaryArgument === 'true';
@@ -19,6 +22,7 @@ if (!implementation || !modulePath ||
     !Number.isInteger(expectedPayloadBytes) || expectedPayloadBytes <= 0 ||
     !['native', 'string'].includes(textConsumption) ||
     !['buffer', 'string'].includes(serverTextOutput) ||
+    !['tcp', 'tls'].includes(transport) ||
     typeof process.send !== 'function') {
     throw new Error('ingress-server-worker must be started by benchmark/ingress-run.js');
 }
@@ -86,7 +90,12 @@ async function main() {
         perMessageDeflate: false,
         textAsString: implementation === 'current' && serverTextOutput === 'string'
     });
-    const httpServer = http.createServer();
+    const httpServer = transport === 'tls'
+        ? https.createServer({
+            key: fs.readFileSync(path.join(__dirname, '..', 'test', 'fixtures', 'key.pem')),
+            cert: fs.readFileSync(path.join(__dirname, '..', 'test', 'fixtures', 'cert.pem'))
+        })
+        : http.createServer();
 
     httpServer.on('upgrade', (request, socket, head) => {
         websocketServer.handleUpgrade(request, socket, head, (webSocket) => {

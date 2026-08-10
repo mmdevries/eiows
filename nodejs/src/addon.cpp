@@ -2,6 +2,7 @@
 
 #include "../../uWebSockets/src/Extensions.h"
 #include "../../uWebSockets/src/StreamWebSocket.h"
+#include "native_transport.h"
 
 #include <cstdint>
 #include <limits>
@@ -25,6 +26,7 @@ struct SessionHandle {
         session(std::move(value)) {}
 
     std::unique_ptr<eioWS::StreamWebSocket> session;
+    eiowsNode::NativeTransport *transport = nullptr;
 };
 
 struct CompressionContextHandle {
@@ -210,7 +212,14 @@ bool getInput(napi_env env, napi_value value, NativeInput &input) {
 }
 
 void finalizeSession(napi_env, void *data, void *) {
-    delete static_cast<SessionHandle *>(data);
+    SessionHandle *handle = static_cast<SessionHandle *>(data);
+    if (handle && handle->transport) {
+        eiowsNode::NativeTransport *transport = handle->transport;
+        handle->transport = nullptr;
+        eiowsNode::detachNativeTransportStorage(transport);
+        eiowsNode::destroyNativeTransport(transport);
+    }
+    delete handle;
 }
 
 void finalizeCompressionContext(napi_env, void *data, void *) {
@@ -587,6 +596,198 @@ napi_value createCloseFrame(napi_env env, napi_callback_info info) {
     return createExternalBuffer(env, std::move(frame));
 }
 
+napi_value attachTransport(napi_env env, napi_callback_info info) {
+    std::vector<napi_value> args;
+    if (!getArguments(env, info, 5, args)) {
+        return nullptr;
+    }
+    SessionHandle *handle = getSession(env, args[0]);
+    bool textAsBuffer = false;
+    bool encrypted = false;
+    if (!handle || !getBoolean(env, args[3], textAsBuffer) ||
+        !getBoolean(env, args[4], encrypted)) {
+        return nullptr;
+    }
+    if (handle->transport) {
+        napi_throw_error(env, nullptr, "native transport is already attached");
+        return nullptr;
+    }
+
+    handle->transport = eiowsNode::attachNativeTransport(
+        env,
+        handle->session.get(),
+        args[1],
+        args[2],
+        textAsBuffer,
+        encrypted,
+        &handle->transport);
+    napi_value result = nullptr;
+    if (!checkStatus(env, napi_get_boolean(env, handle->transport != nullptr, &result),
+                     "failed to create native transport result")) {
+        return nullptr;
+    }
+    return result;
+}
+
+napi_value feedTransport(napi_env env, napi_callback_info info) {
+    std::vector<napi_value> args;
+    if (!getArguments(env, info, 2, args)) {
+        return nullptr;
+    }
+    SessionHandle *handle = getSession(env, args[0]);
+    NativeInput input;
+    if (!handle || !getInput(env, args[1], input)) {
+        return nullptr;
+    }
+    if (!handle->transport) {
+        napi_throw_error(env, nullptr, "native transport is not attached");
+        return nullptr;
+    }
+    const bool consumed = eiowsNode::feedNativeTransport(
+        handle->transport, args[1], input.data, input.length);
+    napi_value result = nullptr;
+    if (!checkStatus(env, napi_get_boolean(env, consumed, &result),
+                     "failed to create native feed result")) {
+        return nullptr;
+    }
+    return result;
+}
+
+napi_value activateTransport(napi_env env, napi_callback_info info) {
+    std::vector<napi_value> args;
+    if (!getArguments(env, info, 1, args)) {
+        return nullptr;
+    }
+    SessionHandle *handle = getSession(env, args[0]);
+    if (!handle) return nullptr;
+    if (!handle->transport) {
+        napi_throw_error(env, nullptr, "native transport is not attached");
+        return nullptr;
+    }
+    const int status = eiowsNode::activateNativeTransport(handle->transport);
+    napi_value result = nullptr;
+    if (!checkStatus(env, napi_create_int32(env, status, &result),
+                     "failed to create native activation status")) {
+        return nullptr;
+    }
+    return result;
+}
+
+napi_value terminateTransport(napi_env env, napi_callback_info info) {
+    std::vector<napi_value> args;
+    if (!getArguments(env, info, 1, args)) {
+        return nullptr;
+    }
+    SessionHandle *handle = getSession(env, args[0]);
+    if (!handle) return nullptr;
+    eiowsNode::terminateNativeTransport(handle->transport);
+    napi_value undefined = nullptr;
+    if (!checkStatus(env, napi_get_undefined(env, &undefined),
+                     "failed to create undefined")) {
+        return nullptr;
+    }
+    return undefined;
+}
+
+napi_value writeTransportMessage(napi_env env, napi_callback_info info) {
+    std::vector<napi_value> args;
+    if (!getArguments(env, info, 5, args, 4)) {
+        return nullptr;
+    }
+    SessionHandle *handle = getSession(env, args[0]);
+    int32_t opCode = 0;
+    bool compress = false;
+    if (!handle || !getInt32(env, args[2], opCode) || !getBoolean(env, args[3], compress)) {
+        return nullptr;
+    }
+    if (!handle->transport) {
+        napi_throw_error(env, nullptr, "native transport is not attached");
+        return nullptr;
+    }
+    napi_value callback = args.size() == 5 ? args[4] : nullptr;
+    const int status = eiowsNode::writeNativeMessage(
+        handle->transport,
+        args[1],
+        static_cast<eioWS::OpCode>(opCode),
+        compress,
+        callback);
+    napi_value result = nullptr;
+    if (!checkStatus(env, napi_create_int32(env, status, &result),
+                     "failed to create native write status")) {
+        return nullptr;
+    }
+    return result;
+}
+
+napi_value writeTransportFrames(napi_env env, napi_callback_info info) {
+    std::vector<napi_value> args;
+    if (!getArguments(env, info, 3, args, 2)) {
+        return nullptr;
+    }
+    SessionHandle *handle = getSession(env, args[0]);
+    if (!handle) return nullptr;
+    if (!handle->transport) {
+        napi_throw_error(env, nullptr, "native transport is not attached");
+        return nullptr;
+    }
+    napi_value callback = args.size() == 3 ? args[2] : nullptr;
+    const int status = eiowsNode::writeNativeFrameList(
+        handle->transport, args[1], callback);
+    napi_value result = nullptr;
+    if (!checkStatus(env, napi_create_int32(env, status, &result),
+                     "failed to create native frame write status")) {
+        return nullptr;
+    }
+    return result;
+}
+
+napi_value writeTransportClose(napi_env env, napi_callback_info info) {
+    std::vector<napi_value> args;
+    if (!getArguments(env, info, 3, args)) {
+        return nullptr;
+    }
+    SessionHandle *handle = getSession(env, args[0]);
+    int32_t code = 0;
+    NativeInput reason;
+    if (!handle || !getInt32(env, args[1], code) || !getInput(env, args[2], reason)) {
+        return nullptr;
+    }
+    if (!handle->transport) {
+        napi_throw_error(env, nullptr, "native transport is not attached");
+        return nullptr;
+    }
+    const int status = eiowsNode::writeNativeClose(
+        handle->transport,
+        static_cast<uint16_t>(code),
+        reason.data,
+        reason.length);
+    napi_value result = nullptr;
+    if (!checkStatus(env, napi_create_int32(env, status, &result),
+                     "failed to create native close write status")) {
+        return nullptr;
+    }
+    return result;
+}
+
+napi_value transportBufferedAmount(napi_env env, napi_callback_info info) {
+    std::vector<napi_value> args;
+    if (!getArguments(env, info, 1, args)) {
+        return nullptr;
+    }
+    SessionHandle *handle = getSession(env, args[0]);
+    if (!handle) return nullptr;
+    napi_value result = nullptr;
+    if (!checkStatus(env,
+                     napi_create_double(
+                         env,
+                         static_cast<double>(eiowsNode::nativeBufferedAmount(handle->transport)),
+                         &result),
+                     "failed to create native buffered amount")) {
+        return nullptr;
+    }
+    return result;
+}
+
 napi_value dispose(napi_env env, napi_callback_info info) {
     std::vector<napi_value> args;
     if (!getArguments(env, info, 1, args)) {
@@ -606,6 +807,12 @@ napi_value dispose(napi_env env, napi_callback_info info) {
     }
     SessionHandle *handle = static_cast<SessionHandle *>(data);
     if (handle) {
+        if (handle->transport) {
+            eiowsNode::NativeTransport *transport = handle->transport;
+            handle->transport = nullptr;
+            eiowsNode::detachNativeTransportStorage(transport);
+            eiowsNode::destroyNativeTransport(transport);
+        }
         handle->session.reset();
     }
     napi_value undefined = nullptr;
@@ -630,12 +837,24 @@ napi_value guardedCallback(napi_env env, napi_callback_info info) {
 }
 
 napi_value initialize(napi_env env, napi_value exports) {
+    if (!eiowsNode::initializeNativeEnvironment(env)) {
+        napi_throw_error(env, nullptr, "failed to initialize native transport environment");
+        return nullptr;
+    }
     const napi_property_descriptor properties[] = {
         {"createCompressionContext", nullptr, guardedCallback<createCompressionContext>, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"createSession", nullptr, guardedCallback<createSession>, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"consume", nullptr, guardedCallback<consume>, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"frame", nullptr, guardedCallback<createFrame>, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"closeFrame", nullptr, guardedCallback<createCloseFrame>, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"attachTransport", nullptr, guardedCallback<attachTransport>, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"activateTransport", nullptr, guardedCallback<activateTransport>, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"terminateTransport", nullptr, guardedCallback<terminateTransport>, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"feedTransport", nullptr, guardedCallback<feedTransport>, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"writeTransportMessage", nullptr, guardedCallback<writeTransportMessage>, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"writeTransportFrames", nullptr, guardedCallback<writeTransportFrames>, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"writeTransportClose", nullptr, guardedCallback<writeTransportClose>, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"transportBufferedAmount", nullptr, guardedCallback<transportBufferedAmount>, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"dispose", nullptr, guardedCallback<dispose>, nullptr, nullptr, nullptr, napi_default, nullptr}
     };
     if (!checkStatus(env,
