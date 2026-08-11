@@ -4,6 +4,7 @@ const { createHash } = require('node:crypto');
 const { EventEmitter } = require('node:events');
 
 const DEFAULT_PAYLOAD_LIMIT = 16777216;
+const DEFAULT_BACKPRESSURE_LIMIT = 67108864;
 const CLOSE_TIMEOUT = 15000;
 const FastBuffer = Buffer[Symbol.species];
 
@@ -124,7 +125,7 @@ function abortConnection(socket, code, message) {
 
 class WebSocket extends EventEmitter {
     constructor(external, socket, server, compressEnabled, compressThreshold, protocol, extensions,
-                textAsBuffer) {
+                textAsBuffer, maxBackpressure) {
         super();
         this.external = external;
         this.CONNECTING = eiows.CONNECTING;
@@ -138,6 +139,7 @@ class WebSocket extends EventEmitter {
         this.extensions = extensions;
         this.binaryType = 'nodebuffer';
         this._textAsBuffer = textAsBuffer;
+        this._maxBackpressure = maxBackpressure;
 
         this._transportSocket = socket;
         this._server = server;
@@ -168,7 +170,8 @@ class WebSocket extends EventEmitter {
                 socket._handle,
                 this,
                 textAsBuffer,
-                Boolean(socket.encrypted)
+                Boolean(socket.encrypted),
+                maxBackpressure
             );
         }
         if (!this._nativeTransport) {
@@ -302,6 +305,10 @@ class WebSocket extends EventEmitter {
         this._finalizeClose();
     }
 
+    _onNativeBackpressure() {
+        if (this.readyState !== eiows.CLOSED) this.readyState = eiows.CLOSING;
+    }
+
     _onNativeTransportError(message) {
         if (this.readyState === eiows.CLOSED) return;
         this.readyState = eiows.CLOSING;
@@ -347,6 +354,7 @@ class WebSocket extends EventEmitter {
             if (callback) process.nextTick(callback, error);
             return false;
         }
+        if (!this._acceptFallbackWrite(Buffer.byteLength(frame), callback)) return false;
         try {
             if (callback) {
                 return socket.write(frame, (error) => callback(error || undefined));
@@ -399,6 +407,8 @@ class WebSocket extends EventEmitter {
 
     _writeFrameParts(list, callback) {
         const socket = this._transportSocket;
+        const bytes = list.reduce((total, part) => total + Buffer.byteLength(part), 0);
+        if (!this._acceptFallbackWrite(bytes, callback)) return;
         let corked = false;
         try {
             if (typeof socket.cork === 'function') {
@@ -424,6 +434,7 @@ class WebSocket extends EventEmitter {
 
     _writeTwoFrameParts(header, payload, callback) {
         const socket = this._transportSocket;
+        if (!this._acceptFallbackWrite(header.length + payload.length, callback)) return;
         let corked = false;
         try {
             if (typeof socket.cork === 'function') {
@@ -442,6 +453,21 @@ class WebSocket extends EventEmitter {
         } finally {
             if (corked) socket.uncork();
         }
+    }
+
+    _acceptFallbackWrite(bytes, callback) {
+        const socket = this._transportSocket;
+        if (!this._maxBackpressure || !socket ||
+            socket.writableLength + bytes <= this._maxBackpressure) {
+            return true;
+        }
+        const error = new Error(
+            `maximum backpressure of ${this._maxBackpressure} bytes exceeded`
+        );
+        error.code = 'EIOWS_MAX_BACKPRESSURE';
+        if (callback) process.nextTick(callback, error);
+        this.terminate();
+        return false;
     }
 
     _onSocketError(error) {
@@ -691,6 +717,16 @@ class Server extends EventEmitter {
             throw new RangeError('maxPayload must be an integer between 0 and 2147483647');
         }
         this._maxPayload = maxPayload;
+        const maxBackpressure = options.maxBackpressure === undefined
+            ? DEFAULT_BACKPRESSURE_LIMIT
+            : Number(options.maxBackpressure);
+        if (!Number.isInteger(maxBackpressure) || maxBackpressure < 0 ||
+            maxBackpressure > 0x7fffffff) {
+            throw new RangeError(
+                'maxBackpressure must be an integer between 0 and 2147483647'
+            );
+        }
+        this._maxBackpressure = maxBackpressure;
         this._noDelay = options.noDelay === undefined ? true : Boolean(options.noDelay);
         // Match ws: text is delivered as Buffer with isBinary === false.
         // Engine.IO performs its normal string conversion in the transport.
@@ -796,7 +832,8 @@ class Server extends EventEmitter {
             this._compressThreshold,
             protocol,
             extensions,
-            this._textAsBuffer
+            this._textAsBuffer,
+            this._maxBackpressure
         );
         webSocket._upgradePending = true;
         webSocket.readyState = eiows.CONNECTING;

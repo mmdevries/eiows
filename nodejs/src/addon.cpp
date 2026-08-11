@@ -600,14 +600,21 @@ napi_value createCloseFrame(napi_env env, napi_callback_info info) {
 
 napi_value attachTransport(napi_env env, napi_callback_info info) {
     std::vector<napi_value> args;
-    if (!getArguments(env, info, 5, args)) {
+    if (!getArguments(env, info, 6, args)) {
         return nullptr;
     }
     SessionHandle *handle = getSession(env, args[0]);
     bool textAsBuffer = false;
     bool encrypted = false;
+    int32_t maxBackpressure = 0;
     if (!handle || !getBoolean(env, args[3], textAsBuffer) ||
-        !getBoolean(env, args[4], encrypted)) {
+        !getBoolean(env, args[4], encrypted) ||
+        !getInt32(env, args[5], maxBackpressure)) {
+        return nullptr;
+    }
+    if (maxBackpressure < 0) {
+        napi_throw_range_error(
+            env, nullptr, "maxBackpressure must be a non-negative 32-bit integer");
         return nullptr;
     }
     if (handle->transport) {
@@ -622,6 +629,7 @@ napi_value attachTransport(napi_env env, napi_callback_info info) {
         args[2],
         textAsBuffer,
         encrypted,
+        static_cast<size_t>(maxBackpressure),
         &handle->transport);
     napi_value result = nullptr;
     if (!checkStatus(env, napi_get_boolean(env, handle->transport != nullptr, &result),

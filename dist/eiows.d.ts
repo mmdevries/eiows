@@ -21,6 +21,11 @@ export interface PerMessageDeflateOptions {
 
 export interface ServerOptions {
     maxPayload?: number;
+    /**
+     * Maximum queued outgoing bytes per connection before it is terminated.
+     * Defaults to 64 MiB. Set to 0 to disable the limit.
+     */
+    maxBackpressure?: number;
     noDelay?: boolean;
     perMessageDeflate?: boolean | PerMessageDeflateOptions;
     /**

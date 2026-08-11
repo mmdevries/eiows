@@ -789,6 +789,74 @@ test('retains TLS ciphertext and callbacks across raw socket backpressure', asyn
     await closeServer(server);
 });
 
+async function runMaxBackpressureCase(secure) {
+    const server = secure ? https.createServer(tlsOptions) : http.createServer();
+    const maxBackpressure = 256 * 1024;
+    const writeCount = 128;
+    const payload = Buffer.alloc(256 * 1024, 0x61);
+    const wsServer = new eiows.Server({
+        maxBackpressure,
+        perMessageDeflate: false
+    });
+    let webSocket;
+    let errorEvents = 0;
+    let callbackCount = 0;
+    const callbackErrors = [];
+    let resolveCallbacks;
+    const callbacksDone = new Promise((resolve) => { resolveCallbacks = resolve; });
+    let resolveClosed;
+    const connectionClosed = new Promise((resolve) => { resolveClosed = resolve; });
+
+    server.on('upgrade', (request, socket, head) => {
+        wsServer.handleUpgrade(request, socket, head, (value) => {
+            webSocket = value;
+            webSocket.on('error', () => { errorEvents++; });
+            webSocket.once('close', (code, reason) => resolveClosed({ code, reason }));
+            for (let index = 0; index < writeCount; index++) {
+                webSocket.send(payload, (error) => {
+                    callbackCount++;
+                    if (error) callbackErrors.push(error);
+                    if (callbackCount === writeCount) resolveCallbacks();
+                });
+            }
+        });
+    });
+
+    const port = await listen(server);
+    const socket = connect(port, secure);
+    try {
+        await new Promise((resolve, reject) => {
+            socket.once(secure ? 'secureConnect' : 'connect', resolve);
+            socket.once('error', reject);
+        });
+        socket.pause();
+        socket.write(websocketRequest());
+
+        const close = await connectionClosed;
+        await callbacksDone;
+        assert.equal(close.code, 1006);
+        assert.equal(close.reason, '');
+        assert.equal(webSocket.readyState, eiows.CLOSED);
+        assert.equal(webSocket.bufferedAmount, 0);
+        assert.equal(wsServer._clients.size, 0);
+        assert.equal(errorEvents, 0, 'backpressure termination must not emit error');
+        assert.ok(callbackErrors.length > 0, 'queued writes must be cancelled');
+        assert.ok(
+            callbackErrors.some((error) => error.code === 'EIOWS_MAX_BACKPRESSURE'),
+            'expected a distinct backpressure callback error'
+        );
+    } finally {
+        if (!socket.destroyed) await destroySocket(socket);
+        await new Promise((resolve) => wsServer.close(resolve));
+        if (server.listening) await closeServer(server);
+    }
+}
+
+test('terminates native TCP connections above maxBackpressure', () =>
+    runMaxBackpressureCase(false));
+test('terminates native TLS connections above maxBackpressure', () =>
+    runMaxBackpressureCase(true));
+
 async function runDetachedArrayBufferWriteCase(secure) {
     const server = secure ? https.createServer(tlsOptions) : http.createServer();
     const payloadLength = 4 * 1024 * 1024;
@@ -1531,6 +1599,41 @@ test('writes pre-encoded sendFrame parts without copying them', async () => {
     const closed = new Promise((resolve) => webSocket.once('close', resolve));
     webSocket.terminate();
     await closed;
+});
+
+test('applies maxBackpressure when native transport takeover is unavailable', async () => {
+    const [session] = native.createSession(0, 1024, '');
+    const socket = new CapturingSocket();
+    socket.writableLength = 8;
+    const webSocket = new eiows.WebSocket(
+        session, socket, null, false, 1024, '', '', true, 8);
+    const closed = new Promise((resolve) => webSocket.once('close', resolve));
+    const error = await new Promise((resolve) => webSocket.send('blocked', resolve));
+
+    assert.equal(error.code, 'EIOWS_MAX_BACKPRESSURE');
+    assert.equal(socket.writes.length, 0);
+    await closed;
+    assert.equal(webSocket.readyState, eiows.CLOSED);
+});
+
+test('defaults maxBackpressure to 64 MiB and supports an unlimited opt-out', async () => {
+    const defaultServer = new eiows.Server({});
+    const unlimitedServer = new eiows.Server({ maxBackpressure: 0 });
+    assert.equal(defaultServer._maxBackpressure, 64 * 1024 * 1024);
+    assert.equal(unlimitedServer._maxBackpressure, 0);
+    await Promise.all([
+        new Promise((resolve) => defaultServer.close(resolve)),
+        new Promise((resolve) => unlimitedServer.close(resolve))
+    ]);
+});
+
+test('validates maxBackpressure', () => {
+    for (const value of [-1, 1.5, Infinity, 0x80000000]) {
+        assert.throws(
+            () => new eiows.Server({ maxBackpressure: value }),
+            /maxBackpressure must be an integer between 0 and 2147483647/
+        );
+    }
 });
 
 test('does not allocate zlib streams for every idle compression session', () => {

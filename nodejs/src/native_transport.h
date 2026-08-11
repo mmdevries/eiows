@@ -19,6 +19,7 @@ NativeTransport *attachNativeTransport(napi_env env,
                                        napi_value owner,
                                        bool textAsBuffer,
                                        bool encrypted,
+                                       size_t maxBackpressure,
                                        NativeTransport **storage);
 int activateNativeTransport(NativeTransport *transport);
 void terminateNativeTransport(NativeTransport *transport);

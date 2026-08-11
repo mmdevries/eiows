@@ -880,6 +880,7 @@ public:
                     eioWS::StreamWebSocket *session,
                     napi_value owner,
                     bool textAsBuffer,
+                    size_t maxBackpressure,
                     NativeEnvironment *environment,
                     NativeTransport **storage) :
         env_(env),
@@ -889,6 +890,7 @@ public:
         initialTLSContext_(initialTLSContext),
         session_(session),
         textAsBuffer_(textAsBuffer),
+        maxBackpressure_(maxBackpressure),
         tlsState_(ssl ? TLSState::MEMORY_BIO : TLSState::NONE),
         environment_(environment),
         storage_(storage) {
@@ -1480,6 +1482,10 @@ private:
         enqueueWrite(request.release());
         if (alreadyQueued) {
             submitted->deferred = true;
+            if (backpressureExceeded()) {
+                terminateForBackpressure();
+                return WRITE_ASYNCHRONOUS;
+            }
             updatePoll();
             return WRITE_ASYNCHRONOUS;
         }
@@ -1489,6 +1495,8 @@ private:
         for (WriteRequest *current = writeHead_; current; current = current->next) {
             if (current == submitted) {
                 current->deferred = true;
+                if (backpressureExceeded()) terminateForBackpressure();
+                if (closing_) return WRITE_ASYNCHRONOUS;
                 updatePoll();
                 return WRITE_ASYNCHRONOUS;
             }
@@ -1637,10 +1645,23 @@ private:
         closeNow();
     }
 
-    void closeNow() {
+    bool backpressureExceeded() const {
+        return maxBackpressure_ && pendingBytes_ > maxBackpressure_;
+    }
+
+    void terminateForBackpressure() {
+        if (closing_) return;
+        callOwner("_onNativeBackpressure", 0, nullptr);
+        closeNow(UV_ENOBUFS);
+    }
+
+    void closeNow(int writeStatus = UV_ECANCELED) {
         if (closing_) return;
         closing_ = true;
-        cancelWrites(UV_ECANCELED);
+        cancelWrites(writeStatus);
+        std::string().swap(tlsCiphertext_);
+        tlsCiphertextOffset_ = 0;
+        tlsCommittedPlaintext_ = 0;
         if (pollInitialized_) {
             uv_poll_stop(&poll_);
             pollEvents_ = 0;
@@ -1734,6 +1755,16 @@ private:
                              "failed to create write error")) {
                 return;
             }
+            if (status == UV_ENOBUFS) {
+                napi_value code = createString(
+                    env_, "EIOWS_MAX_BACKPRESSURE", sizeof("EIOWS_MAX_BACKPRESSURE") - 1);
+                if (!code ||
+                    !checkStatus(env_,
+                                 napi_set_named_property(env_, argument, "code", code),
+                                 "failed to set write error code")) {
+                    return;
+                }
+            }
         } else if (!checkStatus(env_, napi_get_undefined(env_, &argument),
                                 "failed to create undefined callback argument")) {
             return;
@@ -1750,6 +1781,7 @@ private:
     BIO *nodeWriteBIO_ = nullptr;
     eioWS::StreamWebSocket *session_;
     bool textAsBuffer_;
+    size_t maxBackpressure_;
     TLSState tlsState_;
     uv_poll_t poll_{};
     napi_ref owner_ = nullptr;
@@ -1849,6 +1881,7 @@ NativeTransport *attachNativeTransport(napi_env env,
                                        napi_value owner,
                                        bool textAsBuffer,
                                        bool encrypted,
+                                       size_t maxBackpressure,
                                        NativeTransport **storage) {
     NativeEnvironment *environment = getNativeEnvironment(env);
     if (!environment || environment->cleaning) return nullptr;
@@ -1920,6 +1953,7 @@ NativeTransport *attachNativeTransport(napi_env env,
         session,
         owner,
         textAsBuffer,
+        maxBackpressure,
         environment,
         storage);
     if (!transport->valid()) {

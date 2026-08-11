@@ -49,6 +49,30 @@ metadata after takeover; it is not the destroyed Node `Duplex`. Supported
 application I/O goes through `send()`, `close()`, `terminate()` and WebSocket
 events.
 
+Backpressure
+------------
+
+Outgoing data is queued per connection when the peer cannot keep up. The
+`maxBackpressure` server option limits the remaining queued WebSocket frame
+bytes to 64 MiB by default. If the limit is exceeded, eiows immediately
+terminates that connection, releases its queued buffers and completes pending
+`send()` callbacks with an error whose `code` is
+`EIOWS_MAX_BACKPRESSURE`. No graceful close frame is attempted because it would
+be queued behind the blocked writes. The resulting `close` event uses code
+1006.
+
+Set a workload-specific limit in bytes, or use `0` to explicitly disable the
+protection:
+
+    const wsServer = new eiows.Server({
+        maxBackpressure: 64 * 1024 * 1024
+    });
+
+`bufferedAmount` reports the remaining userspace queue for a connection. The
+limit is per connection; kernel socket buffers and small TLS transport buffers
+are not included. `maxPayload` is separate and limits incoming messages (16
+MiB by default).
+
 Installation:
 
 npm install eiows
