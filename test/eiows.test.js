@@ -318,6 +318,62 @@ test('takes ownership from Node TCP and consumes upgradeHead natively', () => ru
 test('takes ownership of the descriptor and SSL state from TLSWrap', () => runEchoCase(true));
 test('can restore legacy string messages with textAsString', () => runEchoCase(false, true));
 
+test('trusts Engine.IO-normalized payloads on uncompressed native sends', async () => {
+    const server = http.createServer();
+    const wsServer = new eiows.Server({ maxPayload: 1024, perMessageDeflate: false });
+    const text = 'engine-text';
+    const binary = Buffer.from('engine-binary');
+    let byteLengthCalls = 0;
+    let isBufferCalls = 0;
+
+    server.on('upgrade', (request, socket, head) => {
+        wsServer.handleUpgrade(request, socket, head, (webSocket) => {
+            assert.equal(webSocket._nativeTransport, true);
+            webSocket.on('error', () => {});
+
+            const originalByteLength = Buffer.byteLength;
+            const originalIsBuffer = Buffer.isBuffer;
+            Buffer.byteLength = function (...arguments_) {
+                byteLengthCalls++;
+                return originalByteLength.apply(this, arguments_);
+            };
+            Buffer.isBuffer = function (...arguments_) {
+                isBufferCalls++;
+                return originalIsBuffer.apply(this, arguments_);
+            };
+            try {
+                webSocket.send(text);
+                webSocket.send(binary);
+            } finally {
+                Buffer.byteLength = originalByteLength;
+                Buffer.isBuffer = originalIsBuffer;
+            }
+        });
+    });
+
+    const port = await listen(server);
+    const socket = connect(port, false);
+    const nextFrame = createServerFrameReader(socket);
+    await new Promise((resolve, reject) => {
+        socket.once('connect', resolve);
+        socket.once('error', reject);
+    });
+    socket.write(websocketRequest());
+
+    const textFrame = await nextFrame();
+    assert.equal(textFrame.opCode, 1);
+    assert.equal(textFrame.payload.toString(), text);
+    const binaryFrame = await nextFrame();
+    assert.equal(binaryFrame.opCode, 2);
+    assert.deepEqual(binaryFrame.payload, binary);
+    assert.equal(byteLengthCalls, 0);
+    assert.equal(isBufferCalls, 0);
+
+    await destroySocket(socket);
+    await new Promise((resolve) => wsServer.close(resolve));
+    await closeServer(server);
+});
+
 async function runCloseDuringPendingUpgradeCase(secure) {
     const server = secure ? https.createServer(tlsOptions) : http.createServer();
     const wsServer = new eiows.Server({ perMessageDeflate: false });

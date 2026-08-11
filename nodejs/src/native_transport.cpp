@@ -255,6 +255,26 @@ bool retainBackingStore(napi_env env, napi_value value, InputPart &part) {
     return true;
 }
 
+bool readStringInputPart(napi_env env, napi_value value, InputPart &part) {
+    size_t length = 0;
+    if (!checkStatus(env, napi_get_value_string_utf8(env, value, nullptr, 0, &length),
+                     "failed to read string length")) {
+        return false;
+    }
+    part.owned.resize(length + 1);
+    size_t written = 0;
+    if (!checkStatus(env,
+                     napi_get_value_string_utf8(
+                         env, value, part.owned.data(), part.owned.size(), &written),
+                     "failed to encode string")) {
+        return false;
+    }
+    part.owned.resize(written);
+    part.pointer = part.owned.data();
+    part.length = part.owned.size();
+    return true;
+}
+
 bool readInputPart(napi_env env, napi_value value, InputPart &part) {
     bool isBuffer = false;
     if (!checkStatus(env, napi_is_buffer(env, value, &isBuffer),
@@ -361,24 +381,7 @@ bool readInputPart(napi_env env, napi_value value, InputPart &part) {
             env, nullptr, "expected a string, Buffer, TypedArray or ArrayBuffer");
         return false;
     }
-
-    size_t length = 0;
-    if (!checkStatus(env, napi_get_value_string_utf8(env, value, nullptr, 0, &length),
-                     "failed to read string length")) {
-        return false;
-    }
-    part.owned.resize(length + 1);
-    size_t written = 0;
-    if (!checkStatus(env,
-                     napi_get_value_string_utf8(
-                         env, value, part.owned.data(), part.owned.size(), &written),
-                     "failed to encode string")) {
-        return false;
-    }
-    part.owned.resize(written);
-    part.pointer = part.owned.data();
-    part.length = part.owned.size();
-    return true;
+    return readStringInputPart(env, value, part);
 }
 
 std::string frameHeader(size_t payloadLength, eioWS::OpCode opCode) {
@@ -487,6 +490,14 @@ public:
     bool addInput(napi_value value) {
         InputPart &target = appendPart();
         if (readInputPart(env, value, target)) return true;
+        target.release(env);
+        removeLastPart();
+        return false;
+    }
+
+    bool addTextInput(napi_value value) {
+        InputPart &target = appendPart();
+        if (readStringInputPart(env, value, target)) return true;
         target.release(env);
         removeLastPart();
         return false;
@@ -1009,7 +1020,12 @@ public:
                      napi_value callback) {
         if (!writable()) return UV_EBADF;
         auto request = std::make_unique<WriteRequest>(env_);
-        if (!request->retainCallback(callback) || !request->addInput(input)) return UV_EINVAL;
+        // Engine.IO normalizes text packets to strings before reaching this binding.
+        if (!request->retainCallback(callback) ||
+            !(opCode == eioWS::TEXT ? request->addTextInput(input)
+                                    : request->addInput(input))) {
+            return UV_EINVAL;
+        }
 
         if (compress) {
             InputPart &source = request->front();

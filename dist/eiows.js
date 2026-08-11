@@ -564,14 +564,16 @@ class WebSocket extends EventEmitter {
         }
 
         const binary = typeof message !== 'string';
-        const payload = binary ? toBuffer(message) : message;
-        const payloadLength = binary ? payload.length : Buffer.byteLength(payload);
-        const compress = this.compressEnabled &&
-            (!options || options.compress !== false) &&
-            payloadLength >= this.compressThreshold;
 
         if (this._nativeTransport) {
             try {
+                // Engine.IO's parser normalizes outbound packets to strings,
+                // ArrayBuffers or views. Native code consumes those values directly;
+                // only inspect their length when compression can actually run.
+                const compress = this.compressEnabled &&
+                    (!options || options.compress !== false) &&
+                    (binary ? message.byteLength : Buffer.byteLength(message)) >=
+                        this.compressThreshold;
                 this._finishNativeWrite(
                     native.writeTransportMessage(
                         this.external,
@@ -588,6 +590,12 @@ class WebSocket extends EventEmitter {
             }
             return;
         }
+
+        const payload = binary ? toBuffer(message) : message;
+        const payloadLength = binary ? payload.length : Buffer.byteLength(payload);
+        const compress = this.compressEnabled &&
+            (!options || options.compress !== false) &&
+            payloadLength >= this.compressThreshold;
 
         // Server frames are not masked. For the common uncompressed path,
         // write the small header and original payload as a corked vector so
