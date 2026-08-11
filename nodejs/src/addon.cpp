@@ -5,6 +5,7 @@
 #include "../../uWebSockets/src/StreamWebSocket.h"
 #include "native_transport.h"
 
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <limits>
@@ -73,6 +74,25 @@ bool getArguments(napi_env env,
         return false;
     }
     arguments.resize(count);
+    return true;
+}
+
+template <size_t Capacity>
+bool getFixedArguments(napi_env env,
+                       napi_callback_info info,
+                       std::array<napi_value, Capacity> &arguments,
+                       size_t &count,
+                       size_t minimum) {
+    count = Capacity;
+    if (!checkStatus(env,
+                     napi_get_cb_info(env, info, &count, arguments.data(), nullptr, nullptr),
+                     "failed to read native arguments")) {
+        return false;
+    }
+    if (count < minimum) {
+        napi_throw_type_error(env, nullptr, "not enough arguments");
+        return false;
+    }
     return true;
 }
 
@@ -700,8 +720,9 @@ napi_value terminateTransport(napi_env env, napi_callback_info info) {
 }
 
 napi_value writeTransportMessage(napi_env env, napi_callback_info info) {
-    std::vector<napi_value> args;
-    if (!getArguments(env, info, 5, args, 4)) {
+    std::array<napi_value, 5> args{};
+    size_t count = 0;
+    if (!getFixedArguments(env, info, args, count, 4)) {
         return nullptr;
     }
     SessionHandle *handle = getSession(env, args[0]);
@@ -714,7 +735,7 @@ napi_value writeTransportMessage(napi_env env, napi_callback_info info) {
         napi_throw_error(env, nullptr, "native transport is not attached");
         return nullptr;
     }
-    napi_value callback = args.size() == 5 ? args[4] : nullptr;
+    napi_value callback = count == 5 ? args[4] : nullptr;
     const int status = eiowsNode::writeNativeMessage(
         handle->transport,
         args[1],
@@ -730,8 +751,9 @@ napi_value writeTransportMessage(napi_env env, napi_callback_info info) {
 }
 
 napi_value writeTransportFrames(napi_env env, napi_callback_info info) {
-    std::vector<napi_value> args;
-    if (!getArguments(env, info, 3, args, 2)) {
+    std::array<napi_value, 3> args{};
+    size_t count = 0;
+    if (!getFixedArguments(env, info, args, count, 2)) {
         return nullptr;
     }
     SessionHandle *handle = getSession(env, args[0]);
@@ -740,7 +762,7 @@ napi_value writeTransportFrames(napi_env env, napi_callback_info info) {
         napi_throw_error(env, nullptr, "native transport is not attached");
         return nullptr;
     }
-    napi_value callback = args.size() == 3 ? args[2] : nullptr;
+    napi_value callback = count == 3 ? args[2] : nullptr;
     const int status = eiowsNode::writeNativeFrameList(
         handle->transport, args[1], callback);
     napi_value result = nullptr;

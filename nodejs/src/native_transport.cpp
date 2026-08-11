@@ -199,10 +199,12 @@ public:
     InputPart(InputPart &&other) noexcept :
         backingStore(std::move(other.backingStore)),
         owned(std::move(other.owned)),
+        source(other.source),
         pointer(other.pointer),
         length(other.length),
         ownedOffset(other.ownedOffset) {
         other.pointer = nullptr;
+        other.source = nullptr;
         other.length = 0;
         other.ownedOffset = 0;
     }
@@ -212,10 +214,12 @@ public:
         if (backingStore) std::abort();
         backingStore = std::move(other.backingStore);
         owned = std::move(other.owned);
+        source = other.source;
         pointer = other.pointer;
         length = other.length;
         ownedOffset = other.ownedOffset;
         other.pointer = nullptr;
+        other.source = nullptr;
         other.length = 0;
         other.ownedOffset = 0;
         return *this;
@@ -224,6 +228,7 @@ public:
     void release(napi_env) {
         backingStore.reset();
         owned.clear();
+        source = nullptr;
         pointer = nullptr;
         length = 0;
         ownedOffset = 0;
@@ -231,28 +236,22 @@ public:
 
     std::shared_ptr<v8::BackingStore> backingStore;
     std::string owned;
+    // Valid only until submit() returns; defer() converts it to a backingStore.
+    napi_value source = nullptr;
     char *pointer = nullptr;
     size_t length = 0;
     size_t ownedOffset = 0;
 };
 
-bool retainBackingStore(napi_env env, napi_value value, InputPart &part) {
+void retainBackingStore(napi_value value, InputPart &part) {
     v8::Local<v8::Value> input = localValue(value);
-    if (input.IsEmpty()) {
-        napi_throw_type_error(env, nullptr, "invalid binary write value");
-        return false;
-    }
     if (input->IsArrayBufferView()) {
         part.backingStore =
             input.As<v8::ArrayBufferView>()->Buffer()->GetBackingStore();
     } else if (input->IsArrayBuffer()) {
         part.backingStore = input.As<v8::ArrayBuffer>()->GetBackingStore();
     }
-    if (!part.backingStore && part.length != 0) {
-        napi_throw_error(env, nullptr, "failed to retain binary write storage");
-        return false;
-    }
-    return true;
+    part.source = nullptr;
 }
 
 bool readStringInputPart(napi_env env, napi_value value, InputPart &part) {
@@ -284,11 +283,11 @@ bool readInputPart(napi_env env, napi_value value, InputPart &part) {
     if (isBuffer) {
         void *data = nullptr;
         if (!checkStatus(env, napi_get_buffer_info(env, value, &data, &part.length),
-                         "failed to read Buffer") ||
-            !retainBackingStore(env, value, part)) {
+                         "failed to read Buffer")) {
             return false;
         }
         part.pointer = static_cast<char *>(data);
+        part.source = value;
         return true;
     }
 
@@ -334,7 +333,8 @@ bool readInputPart(napi_env env, napi_value value, InputPart &part) {
         }
         part.pointer = static_cast<char *>(data);
         part.length = elementCount * elementSize;
-        return retainBackingStore(env, value, part);
+        part.source = value;
+        return true;
     }
 
     bool isDataView = false;
@@ -353,7 +353,8 @@ bool readInputPart(napi_env env, napi_value value, InputPart &part) {
             return false;
         }
         part.pointer = static_cast<char *>(data);
-        return retainBackingStore(env, value, part);
+        part.source = value;
+        return true;
     }
 
     bool isArrayBuffer = false;
@@ -368,7 +369,8 @@ bool readInputPart(napi_env env, napi_value value, InputPart &part) {
             return false;
         }
         part.pointer = static_cast<char *>(data);
-        return retainBackingStore(env, value, part);
+        part.source = value;
+        return true;
     }
 
     napi_valuetype type;
@@ -422,6 +424,7 @@ private:
 
 public:
     static constexpr size_t INLINE_PARTS = 2;
+    static constexpr size_t INLINE_BYTES = 1024 + 14;
 
     explicit WriteRequest(napi_env value) : env(value) {}
 
@@ -462,6 +465,7 @@ public:
 
     void abandonReferences() {
         callback = nullptr;
+        callbackValue = nullptr;
     }
 
     bool retainCallback(napi_value value) {
@@ -476,8 +480,23 @@ public:
             napi_throw_type_error(env, nullptr, "write callback must be a function");
             return false;
         }
-        return checkStatus(env, napi_create_reference(env, value, 1, &callback),
-                           "failed to retain write callback");
+        callbackValue = value;
+        return true;
+    }
+
+    bool defer() {
+        if (deferred) return true;
+        retainRemainingInputs();
+        if (callbackValue &&
+            !checkStatus(env,
+                         napi_create_reference(env, callbackValue, 1, &callback),
+                         "failed to retain write callback")) {
+            callbackValue = nullptr;
+            return false;
+        }
+        callbackValue = nullptr;
+        deferred = true;
+        return true;
     }
 
     void addOwned(std::string value) {
@@ -537,6 +556,23 @@ public:
 
     bool flatten() {
         if (partCount <= 1) return true;
+        if (bytes <= inlineBytes.size()) {
+            size_t offset = 0;
+            for (size_t index = 0; index < partCount; index++) {
+                InputPart &current = part(index);
+                if (current.length) {
+                    std::memcpy(inlineBytes.data() + offset,
+                                current.pointer,
+                                current.length);
+                    offset += current.length;
+                }
+            }
+            clearParts();
+            InputPart &combined = appendPart();
+            combined.pointer = inlineBytes.data();
+            combined.length = offset;
+            return prepare();
+        }
         std::string combined;
         combined.resize(bytes);
         size_t offset = 0;
@@ -624,6 +660,13 @@ public:
 
     size_t remainingBytes() const { return bytes - sent; }
 
+    void retainRemainingInputs() {
+        for (size_t index = cursorPart; index < partCount; index++) {
+            InputPart &current = part(index);
+            if (current.source) retainBackingStore(current.source, current);
+        }
+    }
+
     void advance(size_t length) {
         sent += length;
         advanceCursor(length);
@@ -686,6 +729,7 @@ private:
 public:
     napi_env env;
     std::array<InputPart, INLINE_PARTS> inlineParts;
+    std::array<char, INLINE_BYTES> inlineBytes;
     std::vector<InputPart> extraParts;
     std::array<iovec, INLINE_PARTS> inlineIovecs;
     std::vector<iovec> iovecs;
@@ -695,6 +739,7 @@ public:
     size_t cursorPart = 0;
     size_t cursorOffset = 0;
     napi_ref callback = nullptr;
+    napi_value callbackValue = nullptr;
     bool deferred = false;
     WriteRequest *next = nullptr;
 
@@ -1020,9 +1065,9 @@ public:
                      napi_value callback) {
         if (!writable()) return UV_EBADF;
         auto request = std::make_unique<WriteRequest>(env_);
+        if (!request->retainCallback(callback)) return UV_EINVAL;
         // Engine.IO normalizes text packets to strings before reaching this binding.
-        if (!request->retainCallback(callback) ||
-            !(opCode == eioWS::TEXT ? request->addTextInput(input)
+        if (!(opCode == eioWS::TEXT ? request->addTextInput(input)
                                     : request->addInput(input))) {
             return UV_EINVAL;
         }
@@ -1494,10 +1539,10 @@ private:
 
         WriteRequest *submitted = request.get();
         const bool alreadyQueued = writeHead_ != nullptr || flushingWrites_;
+        if (alreadyQueued && !request->defer()) return UV_EINVAL;
         pendingBytes_ += request->bytes;
         enqueueWrite(request.release());
         if (alreadyQueued) {
-            submitted->deferred = true;
             if (backpressureExceeded()) {
                 terminateForBackpressure();
                 return WRITE_ASYNCHRONOUS;
@@ -1510,7 +1555,10 @@ private:
         if (closing_) return UV_EIO;
         for (WriteRequest *current = writeHead_; current; current = current->next) {
             if (current == submitted) {
-                current->deferred = true;
+                if (!current->defer()) {
+                    cancelWrites(UV_ECANCELED);
+                    return UV_EINVAL;
+                }
                 if (backpressureExceeded()) terminateForBackpressure();
                 if (closing_) return WRITE_ASYNCHRONOUS;
                 updatePoll();
@@ -1522,7 +1570,9 @@ private:
 
     void flushWrites() {
         if (flushingWrites_ || closing_ || !active_) return;
-        if (tlsState_ == TLSState::MEMORY_BIO && !processMemoryBIO()) return;
+        // Activation and readTLSMemoryBIO() drive encrypted input. An outbound
+        // submission only needs to drain ciphertext already produced by SSL.
+        if (tlsState_ == TLSState::MEMORY_BIO && !flushMemoryBIOOutput()) return;
         if (tlsState_ == TLSState::MEMORY_BIO && hasTLSOutput()) return;
 
         flushingWrites_ = true;
