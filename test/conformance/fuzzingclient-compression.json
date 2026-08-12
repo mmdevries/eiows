@@ -1,0 +1,12 @@
+{
+    "outdir": "/tmp/autobahn-compression-reports",
+    "servers": [
+        {
+            "url": "ws://127.0.0.1:9001",
+            "agent": "eiows-permessage-deflate"
+        }
+    ],
+    "cases": ["12.*", "13.*"],
+    "exclude-cases": [],
+    "exclude-agent-cases": {}
+}

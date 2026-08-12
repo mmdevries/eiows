@@ -3,7 +3,14 @@
 const { readFileSync } = require('node:fs');
 
 const filename = process.argv[2];
-if (!filename) throw new Error('usage: node scripts/assert-autobahn-report.js <index.json>');
+const expectedCases = Number(process.argv[3]);
+const suite = process.argv[4];
+if (!filename || !Number.isInteger(expectedCases) || expectedCases <= 0 || !suite) {
+    throw new Error(
+        'usage: node scripts/assert-autobahn-report.js ' +
+        '<index.json> <expected-cases> <suite>'
+    );
+}
 
 const report = JSON.parse(readFileSync(filename, 'utf8'));
 let cases = 0;
@@ -18,10 +25,10 @@ for (const [agent, results] of Object.entries(report)) {
     }
 }
 
-if (cases !== 247) {
-    throw new Error(`expected 247 Autobahn base cases, found ${cases}`);
+if (cases !== expectedCases) {
+    throw new Error(`expected ${expectedCases} ${suite} cases, found ${cases}`);
 }
 if (failures.length) {
-    throw new Error(`Autobahn failures:\n${failures.join('\n')}`);
+    throw new Error(`${suite} failures:\n${failures.join('\n')}`);
 }
-process.stdout.write(`Autobahn base conformance passed (${cases} cases)\n`);
+process.stdout.write(`${suite} conformance passed (${cases} cases)\n`);

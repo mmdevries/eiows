@@ -52,13 +52,31 @@ jobs:
           npm test --prefix /tmp/engine.io-protocol/test-suite -- --exit
 
   autobahn:
-    name: RFC 6455 Autobahn base suite
+    name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
     container:
       image: crossbario/autobahn-testsuite@sha256:519915fb568b04c9383f70a1c405ae3ff44ab9e35835b085239c258b6fac3074
       options: --user root
     env:
       PYTHON: /usr/bin/python3
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: RFC 6455 Autobahn base suite
+            spec: test/conformance/fuzzingclient.json
+            server_args: ""
+            report_dir: /tmp/autobahn-reports
+            expected_cases: 247
+            suite: Autobahn base
+            artifact: autobahn-report
+          - name: RFC 7692 Autobahn compression suites
+            spec: test/conformance/fuzzingclient-compression.json
+            server_args: --permessage-deflate
+            report_dir: /tmp/autobahn-compression-reports
+            expected_cases: 216
+            suite: Autobahn compression
+            artifact: autobahn-compression-report
     steps:
       - uses: actions/checkout@v7
       - name: Install Node.js build runtime
@@ -75,8 +93,8 @@ jobs:
           npm ci
       - name: Run Autobahn
         run: |
-          mkdir -p /tmp/autobahn-reports
-          node test/conformance/autobahn-server.js &
+          mkdir -p "${{ matrix.report_dir }}"
+          node test/conformance/autobahn-server.js ${{ matrix.server_args }} &
           server_pid=$!
           trap 'kill "$server_pid" 2>/dev/null || true' EXIT
           for _ in $(seq 1 50); do
@@ -86,12 +104,14 @@ jobs:
             sleep 0.1
           done
           /opt/pypy/bin/wstest -m fuzzingclient \
-            -s test/conformance/fuzzingclient.json
+            -s "${{ matrix.spec }}"
           node scripts/assert-autobahn-report.js \
-            /tmp/autobahn-reports/index.json
+            "${{ matrix.report_dir }}/index.json" \
+            "${{ matrix.expected_cases }}" \
+            "${{ matrix.suite }}"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: autobahn-report
-          path: /tmp/autobahn-reports
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.report_dir }}
           if-no-files-found: error

@@ -3,11 +3,17 @@
 const http = require('node:http');
 const eiows = require('../..');
 
+const args = new Set(process.argv.slice(2));
+const compressionEnabled = args.delete('--permessage-deflate');
+if (args.size) {
+    throw new Error(`unknown argument: ${args.values().next().value}`);
+}
+
 const httpServer = http.createServer();
 const webSocketServer = new eiows.Server({
     maxPayload: 64 * 1024 * 1024,
     maxBackpressure: 128 * 1024 * 1024,
-    perMessageDeflate: false
+    perMessageDeflate: compressionEnabled ? { threshold: 0 } : false
 });
 
 httpServer.on('upgrade', (request, socket, head) => {
@@ -30,5 +36,7 @@ function shutdown() {
 process.once('SIGINT', shutdown);
 process.once('SIGTERM', shutdown);
 httpServer.listen(9001, '0.0.0.0', () => {
-    process.stdout.write('Autobahn server listening\n');
+    process.stdout.write(
+        `Autobahn server listening (permessage-deflate: ${compressionEnabled})\n`
+    );
 });
