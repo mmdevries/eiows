@@ -1,6 +1,6 @@
 {
   "name": "eiows",
-  "version": "11.0.0",
+  "version": "11.1.0",
   "description": "high-performance Node.js WebSocket engine for Socket.IO",
   "license": "MIT",
   "main": "./dist/eiows.js",
