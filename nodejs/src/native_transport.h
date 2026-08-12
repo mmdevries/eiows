@@ -37,6 +37,9 @@ int writeNativeMessage(NativeTransport *transport,
 int writeNativeFrameList(NativeTransport *transport,
                          napi_value list,
                          napi_value callback);
+int writeNativeFrame(NativeTransport *transport,
+                     napi_value frame,
+                     napi_value callback);
 int writeNativeClose(NativeTransport *transport,
                      uint16_t code,
                      const char *reason,

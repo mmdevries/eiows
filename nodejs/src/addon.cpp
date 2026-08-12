@@ -773,6 +773,29 @@ napi_value writeTransportFrames(napi_env env, napi_callback_info info) {
     return result;
 }
 
+napi_value writeTransportFrame(napi_env env, napi_callback_info info) {
+    std::array<napi_value, 3> args{};
+    size_t count = 0;
+    if (!getFixedArguments(env, info, args, count, 2)) {
+        return nullptr;
+    }
+    SessionHandle *handle = getSession(env, args[0]);
+    if (!handle) return nullptr;
+    if (!handle->transport) {
+        napi_throw_error(env, nullptr, "native transport is not attached");
+        return nullptr;
+    }
+    napi_value callback = count == 3 ? args[2] : nullptr;
+    const int status = eiowsNode::writeNativeFrame(
+        handle->transport, args[1], callback);
+    napi_value result = nullptr;
+    if (!checkStatus(env, napi_create_int32(env, status, &result),
+                     "failed to create native write status")) {
+        return nullptr;
+    }
+    return result;
+}
+
 napi_value writeTransportClose(napi_env env, napi_callback_info info) {
     std::vector<napi_value> args;
     if (!getArguments(env, info, 3, args)) {
@@ -907,6 +930,7 @@ napi_value initialize(napi_env env, napi_value exports) {
         {"terminateTransport", nullptr, guardedCallback<terminateTransport>, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"feedTransport", nullptr, guardedCallback<feedTransport>, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"writeTransportMessage", nullptr, guardedCallback<writeTransportMessage>, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"writeTransportFrame", nullptr, guardedCallback<writeTransportFrame>, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"writeTransportFrames", nullptr, guardedCallback<writeTransportFrames>, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"writeTransportClose", nullptr, guardedCallback<writeTransportClose>, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"transportBufferedAmount", nullptr, guardedCallback<transportBufferedAmount>, nullptr, nullptr, nullptr, napi_default, nullptr},

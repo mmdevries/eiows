@@ -74,6 +74,32 @@ function createFrameHeader(payloadLength, opCode) {
 createFrameHeader.textCache = { length: -1, header: null };
 createFrameHeader.binaryCache = { length: -1, header: null };
 
+// Engine.IO treats wsPreEncodedFrame arrays as immutable and reuses them for
+// every recipient of a broadcast. Coalescing a small header/payload pair once
+// keeps native TLS to one SSL_write per connection.
+const nativeFrameCache = new WeakMap();
+const MIN_CACHED_NATIVE_FRAME_BYTES = 512;
+const MAX_CACHED_NATIVE_FRAME_BYTES = 1038;
+
+function prepareNativeFrame(list) {
+    if (!Array.isArray(list) || !list.length) return null;
+
+    const cached = nativeFrameCache.get(list);
+    if (cached) return cached;
+
+    let bytes = 0;
+    for (const part of list) {
+        if (typeof part !== 'string' && !ArrayBuffer.isView(part)) return null;
+        bytes += Buffer.byteLength(part);
+        if (bytes > MAX_CACHED_NATIVE_FRAME_BYTES) return list;
+    }
+
+    if (list.length === 1 || bytes < MIN_CACHED_NATIVE_FRAME_BYTES) return list;
+    const frame = Buffer.concat(list.map(toBuffer), bytes);
+    nativeFrameCache.set(list, frame);
+    return frame;
+}
+
 function headerValue(value) {
     if (Array.isArray(value)) return value.join(', ');
     return typeof value === 'string' ? value : '';
@@ -374,8 +400,10 @@ class WebSocket extends EventEmitter {
             if (callback) process.nextTick(callback, new Error('socket is not writable'));
             return;
         }
-        if (!Array.isArray(list) || !list.length ||
-            list.some((part) => typeof part !== 'string' && !ArrayBuffer.isView(part))) {
+        const nativeFrame = this._nativeTransport ? prepareNativeFrame(list) : list;
+        if (!nativeFrame || (!this._nativeTransport &&
+            (!Array.isArray(list) || !list.length ||
+                list.some((part) => typeof part !== 'string' && !ArrayBuffer.isView(part))))) {
             if (callback) process.nextTick(callback, new TypeError('invalid pre-encoded frame'));
             return;
         }
@@ -388,7 +416,9 @@ class WebSocket extends EventEmitter {
             }
             try {
                 this._finishNativeWrite(
-                    native.writeTransportFrames(this.external, list, callback),
+                    (Buffer.isBuffer(nativeFrame)
+                        ? native.writeTransportFrame(this.external, nativeFrame, callback)
+                        : native.writeTransportFrames(this.external, nativeFrame, callback)),
                     callback
                 );
             } catch (error) {

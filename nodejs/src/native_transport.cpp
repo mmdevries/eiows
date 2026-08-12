@@ -522,6 +522,73 @@ public:
         return false;
     }
 
+    bool addSmallTextFrame(napi_value value,
+                           eioWS::OpCode opCode,
+                           bool &framed) {
+        framed = false;
+        v8::Local<v8::Value> input = localValue(value);
+        if (!input->IsString()) return addTextInput(value);
+
+        v8::Isolate *isolate = v8::Isolate::GetCurrent();
+        v8::Local<v8::String> string = input.As<v8::String>();
+#if NODE_MAJOR_VERSION >= 24
+        const size_t payloadLength = string->Utf8LengthV2(isolate);
+#else
+        const int utf8Length = string->Utf8Length(isolate);
+        if (utf8Length < 0) return false;
+        const size_t payloadLength = static_cast<size_t>(utf8Length);
+#endif
+        const size_t headerLength = payloadLength < 126 ? 2 :
+            payloadLength <= 0xffff ? 4 : 10;
+        if (payloadLength > inlineBytes.size() - headerLength) {
+            return addTextInput(value);
+        }
+
+        const unsigned char first = 0x80 | static_cast<unsigned char>(opCode);
+        inlineBytes[0] = static_cast<char>(first);
+        if (headerLength == 2) {
+            inlineBytes[1] = static_cast<char>(payloadLength);
+        } else if (headerLength == 4) {
+            inlineBytes[1] = 126;
+            inlineBytes[2] = static_cast<char>((payloadLength >> 8) & 0xff);
+            inlineBytes[3] = static_cast<char>(payloadLength & 0xff);
+        } else {
+            inlineBytes[1] = 127;
+            const uint64_t length = payloadLength;
+            for (unsigned int index = 0; index < 8; index++) {
+                inlineBytes[2 + index] = static_cast<char>(
+                    length >> ((7 - index) * 8));
+            }
+        }
+
+        size_t written = 0;
+#if NODE_MAJOR_VERSION >= 24
+        written = string->WriteUtf8V2(
+            isolate,
+            inlineBytes.data() + headerLength,
+            payloadLength,
+            v8::String::WriteFlags::kReplaceInvalidUtf8);
+#else
+        const int utf8Written = string->WriteUtf8(
+            isolate,
+            inlineBytes.data() + headerLength,
+            static_cast<int>(payloadLength),
+            nullptr,
+            v8::String::NO_NULL_TERMINATION | v8::String::REPLACE_INVALID_UTF8);
+        if (utf8Written < 0) return false;
+        written = static_cast<size_t>(utf8Written);
+#endif
+        if (written != payloadLength) {
+            napi_throw_error(env, nullptr, "failed to encode text frame");
+            return false;
+        }
+        InputPart &target = appendPart();
+        target.pointer = inlineBytes.data();
+        target.length = headerLength + written;
+        framed = true;
+        return true;
+    }
+
     void prependOwned(std::string value) {
         if (partCount == 0) {
             addOwned(std::move(value));
@@ -1067,8 +1134,12 @@ public:
         auto request = std::make_unique<WriteRequest>(env_);
         if (!request->retainCallback(callback)) return UV_EINVAL;
         // Engine.IO normalizes text packets to strings before reaching this binding.
-        if (!(opCode == eioWS::TEXT ? request->addTextInput(input)
-                                    : request->addInput(input))) {
+        // Small strings can therefore be encoded and framed directly in request storage.
+        bool framed = false;
+        if (!(opCode == eioWS::TEXT
+                ? (compress ? request->addTextInput(input)
+                            : request->addSmallTextFrame(input, opCode, framed))
+                : request->addInput(input))) {
             return UV_EINVAL;
         }
 
@@ -1082,7 +1153,7 @@ public:
             }
             request->clearParts();
             request->addOwned(std::move(frame));
-        } else {
+        } else if (!framed) {
             request->prependOwned(frameHeader(request->front().length, opCode));
         }
         return submit(std::move(request));
@@ -1118,6 +1189,15 @@ public:
                 !request->addInput(value)) {
                 return UV_EINVAL;
             }
+        }
+        return submit(std::move(request));
+    }
+
+    int writeFrame(napi_value frame, napi_value callback) {
+        if (!writable()) return UV_EBADF;
+        auto request = std::make_unique<WriteRequest>(env_);
+        if (!request->retainCallback(callback) || !request->addInput(frame)) {
+            return UV_EINVAL;
         }
         return submit(std::move(request));
     }
@@ -1628,7 +1708,9 @@ private:
                 request.remainingPartBytes(), batchRemaining);
             size_t written = 0;
             errno = 0;
-            ERR_clear_error();
+            // SSL_get_error() requires an empty thread error queue. Preserve that
+            // contract without walking an already empty queue on every small write.
+            if (ERR_peek_error() != 0) ERR_clear_error();
             const int result = SSL_write_ex(
                 ssl_, request.remainingData(), batch, &written);
             if (result == 1 && written) {
@@ -2066,6 +2148,12 @@ int writeNativeFrameList(NativeTransport *transport,
                          napi_value list,
                          napi_value callback) {
     return transport ? transport->writeFrameList(list, callback) : UV_EBADF;
+}
+
+int writeNativeFrame(NativeTransport *transport,
+                     napi_value frame,
+                     napi_value callback) {
+    return transport ? transport->writeFrame(frame, callback) : UV_EBADF;
 }
 
 int writeNativeClose(NativeTransport *transport,

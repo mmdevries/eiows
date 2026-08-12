@@ -321,7 +321,8 @@ test('can restore legacy string messages with textAsString', () => runEchoCase(f
 test('trusts Engine.IO-normalized payloads on uncompressed native sends', async () => {
     const server = http.createServer();
     const wsServer = new eiows.Server({ maxPayload: 1024, perMessageDeflate: false });
-    const text = 'engine-text';
+    // 512 two-byte characters exercise the direct 1 KiB native text frame.
+    const text = 'é'.repeat(512);
     const binary = Buffer.from('engine-binary');
     let byteLengthCalls = 0;
     let isBufferCalls = 0;
@@ -637,6 +638,53 @@ async function runVectoredFrameCase(secure) {
 
 test('writes multi-part native TCP vectors in one request', () => runVectoredFrameCase(false));
 test('serializes multi-part native vectors through owned TLS', () => runVectoredFrameCase(true));
+
+test('reuses a coalesced small Engine.IO frame through native TLS', async () => {
+    const server = https.createServer(tlsOptions);
+    const wsServer = new eiows.Server({ maxPayload: 2048 });
+    const payload = Buffer.alloc(1024, 0x78);
+    const header = Buffer.from([0x81, 0x7e, 0x04, 0x00]);
+    const preEncodedFrame = [header, payload];
+    let completed = 0;
+    let resolveWrites;
+    let rejectWrites;
+    const writesFinished = new Promise((resolve, reject) => {
+        resolveWrites = resolve;
+        rejectWrites = reject;
+    });
+
+    server.on('upgrade', (request, socket, head) => {
+        wsServer.handleUpgrade(request, socket, head, (webSocket) => {
+            webSocket.on('error', rejectWrites);
+            const complete = (error) => {
+                if (error) return rejectWrites(error);
+                if (++completed === 2) resolveWrites();
+            };
+            webSocket._sender.sendFrame(preEncodedFrame, complete);
+            webSocket._sender.sendFrame(preEncodedFrame, complete);
+        });
+    });
+
+    const port = await listen(server);
+    const socket = connect(port, true);
+    const nextFrame = createServerFrameReader(socket);
+    await new Promise((resolve, reject) => {
+        socket.once('secureConnect', resolve);
+        socket.once('error', reject);
+    });
+    socket.write(websocketRequest());
+
+    for (let index = 0; index < 2; index++) {
+        const frame = await nextFrame();
+        assert.equal(frame.opCode, 1);
+        assert.deepEqual(frame.payload, payload);
+    }
+    await writesFinished;
+
+    await destroySocket(socket);
+    await new Promise((resolve) => wsServer.close(resolve));
+    await closeServer(server);
+});
 
 test('batches frame lists larger than the platform I/O-vector limit', async () => {
     const server = http.createServer();
