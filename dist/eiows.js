@@ -78,7 +78,6 @@ createFrameHeader.binaryCache = { length: -1, header: null };
 // every recipient of a broadcast. Coalescing a small header/payload pair once
 // keeps native TLS to one SSL_write per connection.
 const nativeFrameCache = new WeakMap();
-const MIN_CACHED_NATIVE_FRAME_BYTES = 512;
 const MAX_CACHED_NATIVE_FRAME_BYTES = 1038;
 
 function prepareNativeFrame(list) {
@@ -94,7 +93,7 @@ function prepareNativeFrame(list) {
         if (bytes > MAX_CACHED_NATIVE_FRAME_BYTES) return list;
     }
 
-    if (list.length === 1 || bytes < MIN_CACHED_NATIVE_FRAME_BYTES) return list;
+    if (list.length === 1) return list;
     const frame = Buffer.concat(list.map(toBuffer), bytes);
     nativeFrameCache.set(list, frame);
     return frame;

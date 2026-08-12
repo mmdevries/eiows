@@ -639,12 +639,22 @@ async function runVectoredFrameCase(secure) {
 test('writes multi-part native TCP vectors in one request', () => runVectoredFrameCase(false));
 test('serializes multi-part native vectors through owned TLS', () => runVectoredFrameCase(true));
 
-test('reuses a coalesced small Engine.IO frame through native TLS', async () => {
+test('reuses coalesced small Engine.IO frames through native TLS', async () => {
     const server = https.createServer(tlsOptions);
     const wsServer = new eiows.Server({ maxPayload: 2048 });
-    const payload = Buffer.alloc(1024, 0x78);
-    const header = Buffer.from([0x81, 0x7e, 0x04, 0x00]);
-    const preEncodedFrame = [header, payload];
+    const frames = [
+        {
+            opCode: 1,
+            payload: Buffer.alloc(1024, 0x78),
+            header: Buffer.from([0x81, 0x7e, 0x04, 0x00])
+        },
+        {
+            opCode: 2,
+            payload: Buffer.alloc(227, 0x79),
+            header: Buffer.from([0x82, 0x7e, 0x00, 0xe3])
+        }
+    ];
+    for (const frame of frames) frame.encoded = [frame.header, frame.payload];
     let completed = 0;
     let resolveWrites;
     let rejectWrites;
@@ -658,10 +668,12 @@ test('reuses a coalesced small Engine.IO frame through native TLS', async () => 
             webSocket.on('error', rejectWrites);
             const complete = (error) => {
                 if (error) return rejectWrites(error);
-                if (++completed === 2) resolveWrites();
+                if (++completed === frames.length * 2) resolveWrites();
             };
-            webSocket._sender.sendFrame(preEncodedFrame, complete);
-            webSocket._sender.sendFrame(preEncodedFrame, complete);
+            for (const frame of frames) {
+                webSocket._sender.sendFrame(frame.encoded, complete);
+                webSocket._sender.sendFrame(frame.encoded, complete);
+            }
         });
     });
 
@@ -674,10 +686,12 @@ test('reuses a coalesced small Engine.IO frame through native TLS', async () => 
     });
     socket.write(websocketRequest());
 
-    for (let index = 0; index < 2; index++) {
-        const frame = await nextFrame();
-        assert.equal(frame.opCode, 1);
-        assert.deepEqual(frame.payload, payload);
+    for (const expected of frames) {
+        for (let index = 0; index < 2; index++) {
+            const frame = await nextFrame();
+            assert.equal(frame.opCode, expected.opCode);
+            assert.deepEqual(frame.payload, expected.payload);
+        }
     }
     await writesFinished;
 
