@@ -339,6 +339,66 @@ test('takes ownership from Node TCP and consumes upgradeHead natively', () => ru
 test('takes ownership of the descriptor and SSL state from TLSWrap', () => runEchoCase(true));
 test('can restore legacy string messages with textAsString', () => runEchoCase(false, true));
 
+test('drains coalesced TLS records before waiting for more socket input', async () => {
+    const server = https.createServer(tlsOptions);
+    const wsServer = new eiows.Server({ maxPayload: 16 * 1024 });
+    const expectedMessages = 12;
+    const received = [];
+    let resolveMessages;
+    const messages = new Promise((resolve) => { resolveMessages = resolve; });
+
+    server.on('upgrade', (request, socket, head) => {
+        wsServer.handleUpgrade(request, socket, head, (webSocket) => {
+            webSocket.on('error', () => {});
+            webSocket.on('message', (message, isBinary) => {
+                received.push([Buffer.from(message), isBinary]);
+                if (received.length === expectedMessages) resolveMessages();
+            });
+        });
+    });
+
+    const port = await listen(server);
+    const socket = connect(port, true);
+    const nextFrame = createServerFrameReader(socket);
+    try {
+        await new Promise((resolve, reject) => {
+            socket.once('secureConnect', resolve);
+            socket.once('error', reject);
+        });
+        socket.write(Buffer.concat([
+            Buffer.from(websocketRequest()),
+            clientFrame('ready', { opCode: 9 })
+        ]));
+        const pong = await nextFrame();
+        assert.equal(pong.opCode, 10);
+
+        const frames = Array.from({ length: expectedMessages }, (_, index) =>
+            clientFrame(Buffer.alloc(8 * 1024, index), { opCode: 2 }));
+        socket.write(Buffer.concat(frames));
+        await new Promise((resolve, reject) => {
+            const timeout = setTimeout(
+                () => reject(new Error('timed out draining coalesced TLS records')),
+                3000
+            );
+            messages.then(() => {
+                clearTimeout(timeout);
+                resolve();
+            }, reject);
+        });
+
+        assert.equal(received.length, expectedMessages);
+        for (let index = 0; index < expectedMessages; index++) {
+            assert.equal(received[index][0].length, 8 * 1024);
+            assert.equal(received[index][0][0], index);
+            assert.equal(received[index][1], true);
+        }
+    } finally {
+        if (!socket.destroyed) await destroySocket(socket);
+        await new Promise((resolve) => wsServer.close(resolve));
+        if (server.listening) await closeServer(server);
+    }
+});
+
 test('trusts Engine.IO-normalized payloads on uncompressed native sends', async () => {
     const server = http.createServer();
     const wsServer = new eiows.Server({ maxPayload: 1024, perMessageDeflate: false });

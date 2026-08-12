@@ -1382,11 +1382,16 @@ private:
 
         while (!closing_) {
             size_t length = 0;
-            ERR_clear_error();
+            // SSL_get_error() requires an empty thread error queue. Avoid
+            // walking it on every read when it is already empty.
+            if (ERR_peek_error() != 0) ERR_clear_error();
             const int result = SSL_read_ex(
                 ssl_, sharedReadBuffer.data(), sharedReadBuffer.size(), &length);
             if (result == 1 && length) {
                 if (!consume(sharedReadBuffer.data(), length)) return false;
+                // Avoid a second SSL_read_ex that can only report WANT_READ
+                // once both OpenSSL and the input BIO have been drained.
+                if (!SSL_has_pending(ssl_) && !BIO_ctrl_pending(nodeReadBIO_)) break;
                 continue;
             }
             const int error = SSL_get_error(ssl_, result);
