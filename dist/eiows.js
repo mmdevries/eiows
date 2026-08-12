@@ -116,6 +116,43 @@ function isValidSecWebSocketKey(value) {
         /^[A-Za-z0-9+/]{22}==$/.test(value);
 }
 
+function isHttp11OrHigher(request) {
+    if (!request || !Number.isInteger(request.httpVersionMajor) ||
+        !Number.isInteger(request.httpVersionMinor)) {
+        return false;
+    }
+    return request.httpVersionMajor > 1 ||
+        (request.httpVersionMajor === 1 && request.httpVersionMinor >= 1);
+}
+
+function isValidHostHeader(request) {
+    if (!request || !request.headers) return false;
+    const host = request.headers.host;
+    if (typeof host !== 'string' || !host ||
+        !/^[\x21-\x7e]+$/.test(host) || /[\\/@?#,]/.test(host)) {
+        return false;
+    }
+
+    // IncomingMessage.headers cannot represent duplicate Host fields. Consult
+    // rawHeaders as well so an invalid request cannot be normalized into a
+    // valid-looking one by Node's HTTP parser.
+    if (Array.isArray(request.rawHeaders)) {
+        let hostFields = 0;
+        for (let index = 0; index < request.rawHeaders.length; index += 2) {
+            if (String(request.rawHeaders[index]).toLowerCase() === 'host') hostFields++;
+        }
+        if (hostFields !== 1) return false;
+    }
+
+    try {
+        const parsed = new URL(`http://${host}/`);
+        return Boolean(parsed.hostname) && !parsed.username && !parsed.password &&
+            parsed.pathname === '/' && !parsed.search && !parsed.hash;
+    } catch {
+        return false;
+    }
+}
+
 function isValidCloseCode(code) {
     return (code >= 1000 && code <= 1014 &&
         code !== 1004 && code !== 1005 && code !== 1006) ||
@@ -130,18 +167,23 @@ function selectProtocol(value) {
     const header = headerValue(value);
     if (!header) return '';
     const protocols = header.split(',').map((protocol) => protocol.trim());
-    if (!protocols.length || protocols.some((protocol) =>
-        !protocol || !/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(protocol))) {
-        return null;
+    const seen = new Set();
+    for (const protocol of protocols) {
+        if (!protocol || !/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(protocol) ||
+            seen.has(protocol)) {
+            return null;
+        }
+        seen.add(protocol);
     }
     return protocols[0];
 }
 
-function abortConnection(socket, code, message) {
+function abortConnection(socket, code, message, headers = []) {
     if (!socket || socket.destroyed) return;
     const body = String(message);
     const response = `HTTP/1.1 ${code} ${body}\r\n` +
         'Connection: close\r\n' +
+        headers.map((header) => `${header}\r\n`).join('') +
         'Content-Type: text/plain; charset=utf-8\r\n' +
         `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`;
     socket.once('finish', () => socket.destroy());
@@ -786,16 +828,18 @@ class Server extends EventEmitter {
             return;
         }
 
-        const secKey = request.headers['sec-websocket-key'];
-        const connectionHeader = request.headers.connection;
-        const upgradeHeader = headerValue(request.headers.upgrade);
-        const version = headerValue(request.headers['sec-websocket-version']);
-        const validUpgrade = socket &&
+        const requestHeaders = request && request.headers;
+        const secKey = requestHeaders && requestHeaders['sec-websocket-key'];
+        const connectionHeader = requestHeaders && requestHeaders.connection;
+        const upgradeHeader = headerValue(requestHeaders && requestHeaders.upgrade);
+        const version = headerValue(requestHeaders && requestHeaders['sec-websocket-version']);
+        const validUpgrade = request && requestHeaders && socket &&
             typeof socket.write === 'function' &&
             typeof callback === 'function' &&
             request.method === 'GET' &&
+            isHttp11OrHigher(request) &&
+            isValidHostHeader(request) &&
             isValidSecWebSocketKey(secKey) &&
-            version === '13' &&
             upgradeHeader.toLowerCase() === 'websocket' &&
             hasHeaderToken(connectionHeader, 'upgrade');
 
@@ -804,7 +848,21 @@ class Server extends EventEmitter {
             return;
         }
 
-        const protocol = selectProtocol(request.headers['sec-websocket-protocol']);
+        if (version !== '13') {
+            if (version) {
+                abortConnection(
+                    socket,
+                    426,
+                    'Upgrade Required',
+                    ['Sec-WebSocket-Version: 13']
+                );
+            } else {
+                abortConnection(socket, 400, 'Bad Request');
+            }
+            return;
+        }
+
+        const protocol = selectProtocol(requestHeaders['sec-websocket-protocol']);
         if (protocol === null) {
             abortConnection(socket, 400, 'Bad Request');
             return;
@@ -819,7 +877,7 @@ class Server extends EventEmitter {
             [external, extensions] = native.createSession(
                 this._nativeOptions,
                 this._maxPayload,
-                headerValue(request.headers['sec-websocket-extensions']),
+                headerValue(requestHeaders['sec-websocket-extensions']),
                 this._compressionContext
             );
         } catch (error) {

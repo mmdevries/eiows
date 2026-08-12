@@ -1,0 +1,97 @@
+name: Protocol conformance
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conformance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine-io:
+    name: Engine.IO v4 protocol
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Download pinned official test suite
+        env:
+          ENGINE_IO_PROTOCOL_REVISION: f21de7b00ed09b3bbad2807db718ea5d6bc36aba
+          ENGINE_IO_PROTOCOL_SHA256: 93300ed541f0c21b9f126c5673675fb4611b024fc694c01ba8ac351ef716cd7c
+        run: |
+          curl --fail --location --retry 3 \
+            "https://github.com/socketio/engine.io-protocol/archive/${ENGINE_IO_PROTOCOL_REVISION}.tar.gz" \
+            --output /tmp/engine.io-protocol.tar.gz
+          echo "${ENGINE_IO_PROTOCOL_SHA256}  /tmp/engine.io-protocol.tar.gz" | sha256sum --check
+          mkdir /tmp/engine.io-protocol
+          tar -xzf /tmp/engine.io-protocol.tar.gz --strip-components=1 \
+            -C /tmp/engine.io-protocol
+          npm ci --prefix /tmp/engine.io-protocol/test-suite
+      - name: Run official Engine.IO protocol suite
+        run: |
+          node test/conformance/engine.io-server.js &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 50); do
+            if curl --silent --fail \
+              'http://127.0.0.1:3000/engine.io/?EIO=4&transport=polling' \
+              >/dev/null; then
+              break
+            fi
+            sleep 0.1
+          done
+          npm test --prefix /tmp/engine.io-protocol/test-suite -- --exit
+
+  autobahn:
+    name: RFC 6455 Autobahn base suite
+    runs-on: ubuntu-24.04
+    container:
+      image: crossbario/autobahn-testsuite@sha256:519915fb568b04c9383f70a1c405ae3ff44ab9e35835b085239c258b6fac3074
+      options: --user root
+    env:
+      PYTHON: /usr/bin/python3
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Node.js build runtime
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            bash ca-certificates curl g++ git make python3 zlib1g-dev
+          curl --fail --location --retry 3 \
+            https://nodejs.org/download/release/v24.18.1/node-v24.18.1-linux-x64.tar.xz \
+            --output /tmp/node.tar.xz
+          echo 'd6c664df3f3f61458e8c277585571328522d705166723a7c7823a9253a4d15a0  /tmp/node.tar.xz' \
+            | sha256sum --check
+          tar -xJf /tmp/node.tar.xz --strip-components=1 -C /usr/local
+          npm ci
+      - name: Run Autobahn
+        run: |
+          mkdir -p /tmp/autobahn-reports
+          node test/conformance/autobahn-server.js &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 50); do
+            if bash -c '</dev/tcp/127.0.0.1/9001' 2>/dev/null; then
+              break
+            fi
+            sleep 0.1
+          done
+          /opt/pypy/bin/wstest -m fuzzingclient \
+            -s test/conformance/fuzzingclient.json
+          node scripts/assert-autobahn-report.js \
+            /tmp/autobahn-reports/index.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: autobahn-report
+          path: /tmp/autobahn-reports
+          if-no-files-found: error

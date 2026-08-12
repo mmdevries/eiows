@@ -137,6 +137,27 @@ function websocketRequest(extraHeaders = '') {
         '\r\n';
 }
 
+function openingHandshakeRequest(options = {}) {
+    const requestLine = options.requestLine || 'GET / HTTP/1.1';
+    const hostHeaders = options.hostHeaders === undefined
+        ? ['Host: localhost']
+        : options.hostHeaders;
+    const versionHeaders = options.versionHeaders === undefined
+        ? ['Sec-WebSocket-Version: 13']
+        : options.versionHeaders;
+    return [
+        requestLine,
+        ...hostHeaders,
+        'Upgrade: websocket',
+        'Connection: Upgrade',
+        ...versionHeaders,
+        'Sec-WebSocket-Key: AAAAAAAAAAAAAAAAAAAAAA==',
+        ...(options.extraHeaders || []),
+        '',
+        ''
+    ].join('\r\n');
+}
+
 function createServerFrameReader(socket) {
     let buffer = Buffer.alloc(0);
     let upgraded = false;
@@ -1335,6 +1356,65 @@ test('destroys rejected upgrade sockets after flushing the response', async () =
     await new Promise((resolve) => wsServer.close(resolve));
 });
 
+test('enforces RFC 6455 opening handshake requirements on the wire', async () => {
+    const server = http.createServer();
+    const wsServer = new eiows.Server({ perMessageDeflate: false });
+    const acceptedProtocols = [];
+    server.on('upgrade', (request, socket, head) => {
+        wsServer.handleUpgrade(request, socket, head, (webSocket) => {
+            acceptedProtocols.push(webSocket.protocol);
+            webSocket.on('error', () => {});
+            webSocket.terminate();
+        });
+    });
+
+    const port = await listen(server);
+    const exchange = async (request) => {
+        const socket = net.connect({ port, host: '127.0.0.1' });
+        await new Promise((resolve, reject) => {
+            socket.once('connect', resolve);
+            socket.once('error', reject);
+        });
+        const response = collectUntilSocketClose(socket);
+        socket.write(request);
+        return (await response).toString();
+    };
+
+    try {
+        const invalidRequests = [
+            openingHandshakeRequest({ requestLine: 'GET / HTTP/1.0' }),
+            openingHandshakeRequest({ hostHeaders: [] }),
+            openingHandshakeRequest({ hostHeaders: ['Host: first.test', 'Host: second.test'] }),
+            openingHandshakeRequest({ hostHeaders: ['Host: example.test/path'] }),
+            openingHandshakeRequest({
+                extraHeaders: ['Sec-WebSocket-Protocol: engine.io, engine.io']
+            })
+        ];
+        for (const request of invalidRequests) {
+            assert.match(await exchange(request), /^HTTP\/1\.1 400 Bad Request\r\n/);
+        }
+
+        const missingVersion = await exchange(openingHandshakeRequest({ versionHeaders: [] }));
+        assert.match(missingVersion, /^HTTP\/1\.1 400 Bad Request\r\n/);
+
+        const unsupportedVersion = await exchange(openingHandshakeRequest({
+            versionHeaders: ['Sec-WebSocket-Version: 12']
+        }));
+        assert.match(unsupportedVersion, /^HTTP\/1\.1 426 Upgrade Required\r\n/);
+        assert.match(unsupportedVersion, /^Sec-WebSocket-Version: 13$/m);
+
+        const accepted = await exchange(openingHandshakeRequest({
+            extraHeaders: ['Sec-WebSocket-Protocol: engine.io, fallback']
+        }));
+        assert.match(accepted, /^HTTP\/1\.1 101 Switching Protocols\r\n/);
+        assert.match(accepted, /^Sec-WebSocket-Protocol: engine\.io$/m);
+        assert.deepEqual(acceptedProtocols, ['engine.io']);
+    } finally {
+        await new Promise((resolve) => wsServer.close(resolve));
+        await closeServer(server);
+    }
+});
+
 test('rejects unmasked client frames with a protocol close', () => {
     const [session] = native.createSession(0, 1024, '');
     const events = native.consume(session, Buffer.from([0x81, 0x04, 0x74, 0x65, 0x73, 0x74]));
@@ -1357,6 +1437,51 @@ test('parses a masked frame split at every possible byte boundary', () => {
         const secondEvents = native.consume(session, frame.subarray(split));
         const events = firstEvents.concat(secondEvents);
         assert.deepEqual(events, [[0, expected, false]], `split at byte ${split}`);
+        native.dispose(session);
+    }
+});
+
+test('survives a deterministic malformed and mutated frame corpus', () => {
+    let randomState = 0x91e10da5;
+    const random = () => {
+        randomState ^= randomState << 13;
+        randomState ^= randomState >>> 17;
+        randomState ^= randomState << 5;
+        return randomState >>> 0;
+    };
+    const opCodes = [0, 1, 2, 3, 7, 8, 9, 10, 11, 15];
+
+    for (let iteration = 0; iteration < 750; iteration++) {
+        let input;
+        if (iteration & 1) {
+            const payload = Buffer.alloc(random() % 192);
+            for (let index = 0; index < payload.length; index++) payload[index] = random();
+            input = clientFrame(payload, {
+                fin: Boolean(random() & 1),
+                compressed: Boolean(random() & 1),
+                opCode: opCodes[random() % opCodes.length]
+            });
+            const mutations = 1 + random() % 4;
+            for (let mutation = 0; mutation < mutations; mutation++) {
+                const index = random() % input.length;
+                input[index] ^= 1 << (random() & 7);
+            }
+        } else {
+            input = Buffer.alloc(random() % 256);
+            for (let index = 0; index < input.length; index++) input[index] = random();
+        }
+
+        const [session] = native.createSession(
+            iteration % 3 === 0 ? eiows.PERMESSAGE_DEFLATE : 0,
+            4096,
+            iteration % 3 === 0 ? 'permessage-deflate' : ''
+        );
+        let offset = 0;
+        while (offset < input.length) {
+            const chunkLength = Math.min(input.length - offset, 1 + random() % 23);
+            native.consume(session, input.subarray(offset, offset + chunkLength));
+            offset += chunkLength;
+        }
         native.dispose(session);
     }
 });
@@ -1650,6 +1775,12 @@ test('waits for the peer close after initiating the close handshake', () => {
     const [session] = native.createSession(0, 1024, '');
     const closeFrame = native.closeFrame(session, 1000, Buffer.from('done'));
     assert.equal(parseServerFrame(closeFrame).opCode, 8);
+
+    const pingEvents = native.consume(session, clientFrame('health', { opCode: 9 }));
+    assert.equal(pingEvents.length, 1);
+    const pong = parseServerFrame(pingEvents[0][1]);
+    assert.equal(pong.opCode, 10);
+    assert.equal(pong.payload.toString(), 'health');
 
     const peerPayload = Buffer.alloc(4);
     peerPayload.writeUInt16BE(1000, 0);

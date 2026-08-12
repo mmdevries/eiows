@@ -342,7 +342,11 @@ bool StreamWebSocket::handleFragment(char *data,
     if (webSocket->closing) {
         return true;
     }
-    if (webSocket->closeSent && opCode != CLOSE) {
+    // A locally initiated closing handshake does not exempt us from replying
+    // to Ping until the peer's Close has actually been received (RFC 6455
+    // section 5.5.2). Ignore further application data, but keep processing
+    // control frames needed to complete a healthy closing handshake.
+    if (webSocket->closeSent && opCode != CLOSE && opCode != PING && opCode != PONG) {
         return false;
     }
 

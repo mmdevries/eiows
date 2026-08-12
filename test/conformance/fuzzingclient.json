@@ -1,0 +1,12 @@
+{
+    "outdir": "/tmp/autobahn-reports",
+    "servers": [
+        {
+            "url": "ws://127.0.0.1:9001",
+            "agent": "eiows"
+        }
+    ],
+    "cases": ["*"],
+    "exclude-cases": ["9.*", "12.*", "13.*"],
+    "exclude-agent-cases": {}
+}
