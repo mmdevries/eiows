@@ -454,7 +454,10 @@ napi_value createSession(napi_env env, napi_callback_info info) {
     }
 
     auto session = std::make_unique<eioWS::StreamWebSocket>(
-        negotiatedOptions, static_cast<uint32_t>(maxPayload), compressionContext);
+        negotiatedOptions,
+        negotiator.getServerMaxWindowBits(),
+        static_cast<uint32_t>(maxPayload),
+        compressionContext);
     auto *handle = new SessionHandle(std::move(session));
 
     napi_value external = nullptr;

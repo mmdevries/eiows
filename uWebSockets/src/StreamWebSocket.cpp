@@ -44,20 +44,27 @@ bool CompressionContext::ensureInflater() {
     return true;
 }
 
-bool CompressionContext::ensureDeflater() {
+bool CompressionContext::ensureDeflater(int windowBits) {
     if (deflaterInitialized) {
-        return true;
+        if (deflaterWindowBits == windowBits) {
+            return true;
+        }
+        deflateEnd(&deflationStream);
+        deflationStream = {};
+        deflaterInitialized = false;
+        deflaterWindowBits = 0;
     }
     deflationStream = {};
     if (deflateInit2(&deflationStream,
                      1,
                      Z_DEFLATED,
-                     -15,
+                     -windowBits,
                      8,
                      Z_DEFAULT_STRATEGY) != Z_OK) {
         return false;
     }
     deflaterInitialized = true;
+    deflaterWindowBits = windowBits;
     return true;
 }
 
@@ -84,6 +91,7 @@ bool CompressionContext::resetDeflater() {
     deflateEnd(&deflationStream);
     deflationStream = {};
     deflaterInitialized = false;
+    deflaterWindowBits = 0;
     return false;
 }
 
@@ -155,9 +163,10 @@ InflateResult CompressionContext::inflateMessage(const char *data,
 
 bool CompressionContext::deflateMessage(const char *data,
                                         size_t length,
+                                        int windowBits,
                                         bool resetAfter,
                                         std::string &output) {
-    if (!ensureDeflater() || length > std::numeric_limits<uInt>::max()) {
+    if (!ensureDeflater(windowBits) || length > std::numeric_limits<uInt>::max()) {
         return false;
     }
 
@@ -196,10 +205,12 @@ bool CompressionContext::deflateMessage(const char *data,
 
 StreamWebSocket::StreamWebSocket(
         int negotiatedOptions,
+        int serverMaxWindowBits,
         uint32_t maxPayload,
         std::shared_ptr<CompressionContext> compressionContext) :
     maxPayload(maxPayload),
     extensionOptions(negotiatedOptions),
+    serverMaxWindowBits(serverMaxWindowBits),
     compressionStatus((negotiatedOptions & PERMESSAGE_DEFLATE)
         ? CompressionStatus::ENABLED
         : CompressionStatus::DISABLED),
@@ -280,6 +291,7 @@ bool StreamWebSocket::deflateMessage(const char *data, size_t length, std::strin
     return context->deflateMessage(
         data,
         length,
+        serverMaxWindowBits,
         extensionOptions & SERVER_NO_CONTEXT_TAKEOVER,
         output);
 }

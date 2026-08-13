@@ -14,11 +14,14 @@ namespace eioWS {
     class ExtensionsNegotiator {
         protected:
             int options;
+            int serverMaxWindowBits = 15;
+            bool serverMaxWindowBitsNegotiated = false;
         public:
             ExtensionsNegotiator(int wantedOptions);
             std::string generateOffer() const;
             void readOffer(const std::string &offer);
             int getNegotiatedOptions() const;
+            int getServerMaxWindowBits() const;
     };
 }
 

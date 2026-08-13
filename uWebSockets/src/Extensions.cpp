@@ -174,8 +174,23 @@ bool isWindowBits(const ExtensionParameter &parameter, bool valueRequired) {
         parameter.value[1] >= '0' && parameter.value[1] <= '5';
 }
 
-bool isCompatibleOffer(const ExtensionOffer &offer, int wantedOptions) {
+int windowBitsValue(const ExtensionParameter &parameter) {
+    if (!parameter.hasValue || !isWindowBits(parameter, true)) {
+        return 0;
+    }
+    if (parameter.value.size() == 1) {
+        return parameter.value[0] - '0';
+    }
+    return 10 + parameter.value[1] - '0';
+}
+
+bool isCompatibleOffer(const ExtensionOffer &offer,
+                       int wantedOptions,
+                       int &serverMaxWindowBits,
+                       bool &serverMaxWindowBitsNegotiated) {
     std::unordered_set<std::string> seen;
+    serverMaxWindowBits = 15;
+    serverMaxWindowBitsNegotiated = false;
     for (const ExtensionParameter &parameter : offer.parameters) {
         if (!seen.insert(parameter.name).second) {
             return false;
@@ -189,12 +204,14 @@ bool isCompatibleOffer(const ExtensionOffer &offer, int wantedOptions) {
                 return false;
             }
         } else if (parameter.name == "server_max_window_bits") {
-            // This implementation always uses a 32 KiB server window. The
-            // RFC requires declining a constrained offer we cannot honor.
-            if (!isWindowBits(parameter, true)) {
+            const int windowBits = windowBitsValue(parameter);
+            // zlib promotes an 8-bit deflate window to 9 bits, so accepting 8
+            // would advertise a constraint the compressor cannot honor.
+            if (windowBits < 9) {
                 return false;
             }
-            return false;
+            serverMaxWindowBits = windowBits;
+            serverMaxWindowBitsNegotiated = true;
         } else if (parameter.name == "client_max_window_bits") {
             if (!isWindowBits(parameter, false)) {
                 return false;
@@ -223,6 +240,10 @@ std::string ExtensionsNegotiator::generateOffer() const {
         if (options & Options::SERVER_NO_CONTEXT_TAKEOVER) {
             extensionsOffer += "; server_no_context_takeover";
         }
+        if (serverMaxWindowBitsNegotiated) {
+            extensionsOffer += "; server_max_window_bits=" +
+                std::to_string(serverMaxWindowBits);
+        }
     }
     return extensionsOffer;
 }
@@ -240,8 +261,16 @@ void ExtensionsNegotiator::readOffer(const std::string &offer) {
     bool accepted = false;
     if (parser.parse(offers)) {
         for (const ExtensionOffer &candidate : offers) {
+            int candidateServerMaxWindowBits = 15;
+            bool candidateServerMaxWindowBitsNegotiated = false;
             if (candidate.name == "permessage-deflate" &&
-                isCompatibleOffer(candidate, options)) {
+                isCompatibleOffer(candidate,
+                                  options,
+                                  candidateServerMaxWindowBits,
+                                  candidateServerMaxWindowBitsNegotiated)) {
+                serverMaxWindowBits = candidateServerMaxWindowBits;
+                serverMaxWindowBitsNegotiated =
+                    candidateServerMaxWindowBitsNegotiated;
                 accepted = true;
                 break;
             }
@@ -258,6 +287,10 @@ void ExtensionsNegotiator::readOffer(const std::string &offer) {
 
 int ExtensionsNegotiator::getNegotiatedOptions() const {
     return options;
+}
+
+int ExtensionsNegotiator::getServerMaxWindowBits() const {
+    return serverMaxWindowBits;
 }
 
 } // namespace eioWS

@@ -1336,15 +1336,54 @@ test('only negotiates valid and supported permessage-deflate offers', () => {
 
     assert.equal(negotiate('zzzzzzzzzzzzzzAA'), '');
     assert.equal(negotiate('9'.repeat(4096)), '');
-    assert.equal(negotiate('permessage-deflate; server_max_window_bits=10'), '');
     assert.equal(
-        negotiate('permessage-deflate; server_max_window_bits=10, permessage-deflate'),
+        negotiate('permessage-deflate; server_max_window_bits=10'),
+        'permessage-deflate; client_no_context_takeover; server_no_context_takeover; ' +
+            'server_max_window_bits=10'
+    );
+    assert.equal(negotiate('permessage-deflate; server_max_window_bits=8'), '');
+    assert.equal(
+        negotiate('permessage-deflate; server_max_window_bits=8, permessage-deflate'),
         'permessage-deflate; client_no_context_takeover; server_no_context_takeover'
     );
     assert.equal(
         negotiate('permessage-deflate; client_no_context_takeover=invalid'),
         ''
     );
+});
+
+test('honors negotiated permessage-deflate server window bits', () => {
+    const options = eiows.PERMESSAGE_DEFLATE |
+        eiows.CLIENT_NO_CONTEXT_TAKEOVER |
+        eiows.SERVER_NO_CONTEXT_TAKEOVER;
+    const context = native.createCompressionContext();
+    const [session, response] = native.createSession(
+        options,
+        4096,
+        'permessage-deflate; server_max_window_bits=9',
+        context
+    );
+    const seed = Buffer.from(Array.from({ length: 1024 }, (_, index) =>
+        (index * 131 + Math.floor(index / 7) * 17) & 0xff));
+    const payload = Buffer.concat([seed, seed]);
+
+    assert.equal(
+        response,
+        'permessage-deflate; client_no_context_takeover; server_no_context_takeover; ' +
+            'server_max_window_bits=9'
+    );
+    const frame = parseServerFrame(native.frame(session, payload, 2, true));
+    assert.deepEqual(
+        zlib.inflateRawSync(Buffer.concat([
+            frame.payload,
+            Buffer.from([0x00, 0x00, 0xff, 0xff])
+        ]), {
+            windowBits: 9,
+            finishFlush: zlib.constants.Z_SYNC_FLUSH
+        }),
+        payload
+    );
+    native.dispose(session);
 });
 
 test('safely reuses no-context-takeover streams between sessions', () => {

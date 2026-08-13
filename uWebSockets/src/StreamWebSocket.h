@@ -49,9 +49,10 @@ class CompressionContext {
     z_stream deflationStream = {};
     bool inflaterInitialized = false;
     bool deflaterInitialized = false;
+    int deflaterWindowBits = 0;
 
     bool ensureInflater();
-    bool ensureDeflater();
+    bool ensureDeflater(int windowBits);
     bool resetInflater();
     bool resetDeflater();
 
@@ -69,6 +70,7 @@ public:
                                  std::string &output);
     bool deflateMessage(const char *data,
                         size_t length,
+                        int windowBits,
                         bool resetAfter,
                         std::string &output);
 };
@@ -86,6 +88,7 @@ class StreamWebSocket : public WebSocketState {
 
     uint32_t maxPayload;
     int extensionOptions;
+    int serverMaxWindowBits;
     CompressionStatus compressionStatus;
     std::string fragmentBuffer;
     unsigned char controlTipLength = 0;
@@ -119,6 +122,7 @@ class StreamWebSocket : public WebSocketState {
 
 public:
     StreamWebSocket(int negotiatedOptions,
+                    int serverMaxWindowBits,
                     uint32_t maxPayload,
                     std::shared_ptr<CompressionContext> compressionContext);
     ~StreamWebSocket() = default;
