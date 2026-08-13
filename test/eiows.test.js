@@ -1235,6 +1235,79 @@ test('integrates with Engine.IO and round-trips Unicode text', async () => {
     await closeServer(httpServer);
 });
 
+async function runEngineIoResizableArrayBufferWriteCase(secure) {
+    const server = secure ? https.createServer(tlsOptions) : http.createServer();
+    const engine = new EngineIo({
+        wsEngine: eiows.Server,
+        transports: ['websocket'],
+        perMessageDeflate: false
+    });
+    engine.attach(server);
+
+    const payloadLength = 4 * 1024 * 1024;
+    let resolveSubmitted;
+    let rejectSubmitted;
+    const submitted = new Promise((resolve, reject) => {
+        resolveSubmitted = resolve;
+        rejectSubmitted = reject;
+    });
+    engine.once('connection', (engineSocket) => {
+        engineSocket.once('error', rejectSubmitted);
+        try {
+            const payload = new ArrayBuffer(payloadLength, { maxByteLength: payloadLength });
+            const bytes = new Uint8Array(payload);
+            bytes[0] = 0x31;
+            bytes[payloadLength - 1] = 0x7a;
+            engineSocket.once('flush', () => {
+                process.nextTick(() => {
+                    try {
+                        payload.resize(0);
+                        assert.equal(payload.byteLength, 0);
+                        resolveSubmitted();
+                    } catch (error) {
+                        rejectSubmitted(error);
+                    }
+                });
+            });
+            engineSocket.send(payload);
+        } catch (error) {
+            rejectSubmitted(error);
+        }
+    });
+
+    const port = await listen(server);
+    const socket = connect(port, secure);
+    const nextFrame = createServerFrameReader(socket);
+    try {
+        await new Promise((resolve, reject) => {
+            socket.once(secure ? 'secureConnect' : 'connect', resolve);
+            socket.once('error', reject);
+        });
+        socket.pause();
+        socket.write(websocketRequest());
+        await submitted;
+        socket.resume();
+
+        const openFrame = await nextFrame(5000);
+        assert.equal(openFrame.opCode, 1);
+        assert.equal(openFrame.payload[0], 0x30, 'expected an Engine.IO open packet');
+        const messageFrame = await nextFrame(5000);
+        assert.equal(messageFrame.opCode, 2);
+        assert.equal(messageFrame.payload.length, payloadLength);
+        assert.equal(messageFrame.payload[0], 0x31);
+        assert.equal(messageFrame.payload[payloadLength - 1], 0x7a);
+    } finally {
+        if (!socket.destroyed) await destroySocket(socket);
+        engine.close();
+        if (server.listening) await closeServer(server);
+    }
+}
+
+test('copies resizable Engine.IO buffers across native TCP backpressure', () =>
+    runEngineIoResizableArrayBufferWriteCase(false));
+test('copies resizable Engine.IO buffers across native TLS backpressure', () =>
+    runEngineIoResizableArrayBufferWriteCase(true));
+
 test('exposes the same supported API through ESM and CommonJS', async () => {
     const esm = await import('../dist/wrapper.mjs');
     const exportedNames = [

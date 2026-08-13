@@ -254,6 +254,28 @@ void retainBackingStore(napi_value value, InputPart &part) {
     part.source = nullptr;
 }
 
+bool prepareInputStorage(napi_env env, napi_value value, InputPart &part) {
+    v8::Local<v8::Value> input = localValue(value);
+    std::shared_ptr<v8::BackingStore> backingStore;
+    if (input->IsArrayBufferView()) {
+        backingStore = input.As<v8::ArrayBufferView>()->Buffer()->GetBackingStore();
+    } else if (input->IsArrayBuffer()) {
+        backingStore = input.As<v8::ArrayBuffer>()->GetBackingStore();
+    }
+    if (!backingStore && part.length) {
+        napi_throw_error(env, nullptr, "failed to access binary write storage");
+        return false;
+    }
+    if (backingStore && backingStore->IsResizableByUserJavaScript()) {
+        static const char empty = 0;
+        part.owned.assign(part.pointer ? part.pointer : &empty, part.length);
+        part.pointer = part.owned.data();
+        return true;
+    }
+    part.source = value;
+    return true;
+}
+
 bool readStringInputPart(napi_env env, napi_value value, InputPart &part) {
     size_t length = 0;
     if (!checkStatus(env, napi_get_value_string_utf8(env, value, nullptr, 0, &length),
@@ -287,8 +309,7 @@ bool readInputPart(napi_env env, napi_value value, InputPart &part) {
             return false;
         }
         part.pointer = static_cast<char *>(data);
-        part.source = value;
-        return true;
+        return prepareInputStorage(env, value, part);
     }
 
     bool isTypedArray = false;
@@ -333,8 +354,7 @@ bool readInputPart(napi_env env, napi_value value, InputPart &part) {
         }
         part.pointer = static_cast<char *>(data);
         part.length = elementCount * elementSize;
-        part.source = value;
-        return true;
+        return prepareInputStorage(env, value, part);
     }
 
     bool isDataView = false;
@@ -353,8 +373,7 @@ bool readInputPart(napi_env env, napi_value value, InputPart &part) {
             return false;
         }
         part.pointer = static_cast<char *>(data);
-        part.source = value;
-        return true;
+        return prepareInputStorage(env, value, part);
     }
 
     bool isArrayBuffer = false;
@@ -369,8 +388,7 @@ bool readInputPart(napi_env env, napi_value value, InputPart &part) {
             return false;
         }
         part.pointer = static_cast<char *>(data);
-        part.source = value;
-        return true;
+        return prepareInputStorage(env, value, part);
     }
 
     napi_valuetype type;
