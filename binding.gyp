@@ -1,4 +1,7 @@
 {
+    "variables": {
+        "node_use_ffi%": "false"
+    },
     "targets": [
         {
             "target_name": "eiows",
@@ -21,6 +24,11 @@
             ],
             "libraries": ["-lz"],
             "conditions": [
+                ["node_use_ffi=='true'", {
+                    "defines": ["HAVE_FFI=1"]
+                }, {
+                    "defines": ["HAVE_FFI=0"]
+                }],
                 ["OS=='linux'", {
                     "cflags_cc": ["-std=c++20", "-Wno-cast-function-type", "-Wno-deprecated-declarations"],
                     "cflags_cc!": ["-fno-exceptions", "-std=gnu++11"],
