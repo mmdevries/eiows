@@ -509,6 +509,13 @@ namespace eioWS {
                 if (wState->state.wantsHead) {
     parseNext:
                     while (length >= SHORT_MESSAGE_HEADER) {
+                        const unsigned int headerLength = payloadLength(src) < 126
+                            ? SHORT_MESSAGE_HEADER
+                            : payloadLength(src) == 126 ? MEDIUM_MESSAGE_HEADER
+                                                        : LONG_MESSAGE_HEADER;
+                        if (length < headerLength) {
+                            break;
+                        }
                         unsigned char opCode = getOpCode(src);
                         bool invalidCompressedFrame = rsv1(src) && (opCode == 0 || opCode > 2 || !hooks.setCompressed(wState));
 

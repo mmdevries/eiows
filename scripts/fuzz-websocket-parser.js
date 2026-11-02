@@ -1,5 +1,7 @@
 'use strict';
 
+const assert = require('node:assert/strict');
+const zlib = require('node:zlib');
 const native = require(`../dist/eiows_${process.versions.modules}.node`);
 
 const PERMESSAGE_DEFLATE = 1;
@@ -25,6 +27,7 @@ const iterations = readUnsignedInteger(
 );
 const seed = readUnsignedInteger(process.env.FUZZ_SEED, DEFAULT_SEED, 'FUZZ_SEED');
 let randomState = seed >>> 0;
+let validCases = 0;
 
 function random() {
     randomState ^= randomState << 13;
@@ -93,6 +96,32 @@ for (let iteration = 0; iteration < iterations; iteration++) {
     );
 
     try {
+        // Correct output must also be independent of transport chunk boundaries.
+        // Alternate valid binary round trips with malformed-input robustness cases.
+        if (iteration % 8 < 2) {
+            const payload = randomBuffer(512);
+            const encoded = compression ? zlib.deflateRawSync(payload, {
+                finishFlush: zlib.constants.Z_SYNC_FLUSH
+            }).subarray(0, -4) : payload;
+            const input = clientFrame(encoded, { fin: true, compressed: compression, opCode: 2 });
+            const [wholeSession] = native.createSession(options, 4096,
+                compression ? 'permessage-deflate' : '');
+            try {
+                const whole = native.consume(wholeSession, Buffer.from(input), true);
+                const split = [];
+                for (let offset = 0; offset < input.length;) {
+                    const length = Math.min(input.length - offset, 1 + random() % 31);
+                    split.push(...native.consume(session, input.subarray(offset, offset + length), true));
+                    offset += length;
+                }
+                assert.deepEqual(whole, [[0, payload, true]]);
+                assert.deepEqual(split, whole);
+                validCases++;
+            } finally {
+                native.dispose(wholeSession);
+            }
+            continue;
+        }
         if (random() % 16 === 0) {
             native.closeFrame(session, 1000, Buffer.from('fuzz'));
         }
@@ -115,4 +144,5 @@ for (let iteration = 0; iteration < iterations; iteration++) {
     }
 }
 
-process.stdout.write(`WebSocket parser fuzz passed (${iterations} iterations, seed ${seed})\n`);
+process.stdout.write(`WebSocket parser fuzz passed (${iterations} iterations, ` +
+    `${validCases} valid round trips, seed ${seed})\n`);

@@ -503,9 +503,9 @@ class WebSocket extends EventEmitter {
         }
     }
 
-    _writeTwoFrameParts(header, payload, callback) {
+    _writeTwoFrameParts(header, payload, payloadLength, callback) {
         const socket = this._transportSocket;
-        if (!this._acceptFallbackWrite(header.length + payload.length, callback)) return;
+        if (!this._acceptFallbackWrite(header.length + payloadLength, callback)) return;
         let corked = false;
         try {
             if (typeof socket.cork === 'function') {
@@ -679,7 +679,7 @@ class WebSocket extends EventEmitter {
             if (payloadLength === 0) {
                 this._writeFrame(header, callback);
             } else {
-                this._writeTwoFrameParts(header, payload, callback);
+                this._writeTwoFrameParts(header, payload, payloadLength, callback);
             }
             return;
         }

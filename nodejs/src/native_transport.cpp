@@ -227,7 +227,7 @@ public:
 
     void release(napi_env) {
         backingStore.reset();
-        owned.clear();
+        std::string().swap(owned);
         source = nullptr;
         pointer = nullptr;
         length = 0;
@@ -758,6 +758,8 @@ public:
     }
 
     void stageTLS(size_t length) {
+        // SSL_write_ex has accepted this plaintext into OpenSSL's output BIO.
+        // Its input storage can be released even while ciphertext is queued.
         advanceCursor(length);
     }
 
@@ -781,6 +783,7 @@ private:
                 return;
             }
             length -= available;
+            current.release(env);
             cursorPart++;
             cursorOffset = 0;
         }
@@ -808,7 +811,10 @@ private:
     }
 
     void skipEmptyParts() {
-        while (cursorPart < partCount && part(cursorPart).length == 0) cursorPart++;
+        while (cursorPart < partCount && part(cursorPart).length == 0) {
+            part(cursorPart).release(env);
+            cursorPart++;
+        }
     }
 
 public:
@@ -1149,6 +1155,13 @@ public:
                      bool compress,
                      napi_value callback) {
         if (!writable()) return UV_EBADF;
+        // A single read can contain a message followed by a peer close. The
+        // parser has already entered its closing state while that earlier
+        // message's callback is still allowed to send its response before the
+        // queued close reply. Compression is optional, so frame that response
+        // without invoking the closing parser's compressor. Once CLOSE has
+        // been dispatched, the JS WebSocket rejects further application sends.
+        if (compress && session_->isClosing()) compress = false;
         auto request = std::make_unique<WriteRequest>(env_);
         if (!request->retainCallback(callback)) return UV_EINVAL;
         // Engine.IO normalizes text packets to strings before reaching this binding.
@@ -1511,9 +1524,9 @@ private:
             return false;
         }
         struct ClearEvents {
-            std::vector<eioWS::StreamWebSocketEvent> *events;
-            ~ClearEvents() { events->clear(); }
-        } clear{events};
+            eioWS::StreamWebSocket *session;
+            ~ClearEvents() { session->releaseEvents(); }
+        } clear{session_};
 
         for (eioWS::StreamWebSocketEvent &event : *events) {
             if (!session_ || closing_) return false;
@@ -1562,21 +1575,25 @@ private:
     }
 
     void maybeFinishPeerClose() {
-        if (!pendingClose_ || writeHead_ || closing_) return;
-        pendingClose_ = false;
-        napi_value code = nullptr;
-        napi_value reason = createString(
-            env_, pendingCloseReason_.data(), pendingCloseReason_.size());
-        if (!reason ||
-            !checkStatus(env_, napi_create_uint32(env_, pendingCloseCode_, &code),
-                         "failed to create close code")) {
-            fail("failed to dispatch WebSocket close");
-            return;
+        if (closing_) return;
+        if (pendingClose_) {
+            pendingClose_ = false;
+            napi_value code = nullptr;
+            napi_value reason = createString(
+                env_, pendingCloseReason_.data(), pendingCloseReason_.size());
+            if (!reason ||
+                !checkStatus(env_, napi_create_uint32(env_, pendingCloseCode_, &code),
+                             "failed to create close code")) {
+                fail("failed to dispatch WebSocket close");
+                return;
+            }
+            napi_value arguments[] = {code, reason};
+            // Mark the JS WebSocket as closing and start its deadline as soon as
+            // a peer close arrives, even if its reply is behind blocked writes.
+            if (!callOwner("_onNativeClose", 2, arguments)) return;
+            gracefulCloseRequested_ = true;
         }
-        napi_value arguments[] = {code, reason};
-        if (!callOwner("_onNativeClose", 2, arguments)) return;
-        gracefulCloseRequested_ = true;
-        performTLSShutdown();
+        if (gracefulCloseRequested_) performTLSShutdown();
     }
 
     void performTLSShutdown() {

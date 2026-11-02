@@ -10,6 +10,7 @@ namespace eioWS {
 namespace {
 constexpr size_t FRAGMENT_BUFFER_RETAIN_LIMIT = 1024 * 1024;
 constexpr size_t ZLIB_CHUNK_SIZE = 32 * 1024;
+constexpr size_t EVENT_RETAIN_LIMIT = 256;
 constexpr unsigned char DEFLATE_TRAILER[] = {0x00, 0x00, 0xff, 0xff};
 
 void trimBuffer(std::string &buffer) {
@@ -81,6 +82,24 @@ bool CompressionContext::resetInflater() {
     return false;
 }
 
+bool CompressionContext::restartInflater() {
+    // RFC 7692 permits BFINAL=1 blocks followed by more DEFLATE blocks. A
+    // zlib stream ends at BFINAL, but the negotiated LZ77 history must survive
+    // that boundary, including when context takeover spans messages.
+    unsigned char dictionary[32 * 1024];
+    uInt dictionaryLength = 0;
+    Bytef *nextInput = inflationStream.next_in;
+    const uInt remainingInput = inflationStream.avail_in;
+    if (inflateGetDictionary(&inflationStream, dictionary, &dictionaryLength) != Z_OK ||
+        !resetInflater()) {
+        return false;
+    }
+    inflationStream.next_in = nextInput;
+    inflationStream.avail_in = remainingInput;
+    return !dictionaryLength ||
+        inflateSetDictionary(&inflationStream, dictionary, dictionaryLength) == Z_OK;
+}
+
 bool CompressionContext::resetDeflater() {
     if (!deflaterInitialized) {
         return true;
@@ -141,8 +160,14 @@ InflateResult CompressionContext::inflateMessage(const char *data,
                 resetInflater();
                 return InflateResult::INVALID_DATA;
             }
-            if (result == Z_STREAM_END ||
-                (inflationStream.avail_in == 0 && inflationStream.avail_out != 0)) {
+            if (result == Z_STREAM_END) {
+                if (!restartInflater()) {
+                    resetInflater();
+                    return InflateResult::INTERNAL_ERROR;
+                }
+                continue;
+            }
+            if (inflationStream.avail_in == 0 && inflationStream.avail_out != 0) {
                 break;
             }
             if (previousInput == inflationStream.avail_in && produced == 0) {
@@ -498,7 +523,7 @@ bool StreamWebSocket::handleFragment(char *data,
 }
 
 std::vector<StreamWebSocketEvent> &StreamWebSocket::consume(char *data, size_t length) {
-    events.clear();
+    releaseEvents();
     failureCode = 1002;
     if (closing || !length) {
         return events;
@@ -510,17 +535,35 @@ std::vector<StreamWebSocketEvent> &StreamWebSocket::consume(char *data, size_t l
     }
 
     if (state.spillLength) {
-        const size_t prePadding = WebSocketProtocol::CONSUME_PRE_PADDING;
-        consumeBuffer.resize(prePadding + length);
-        char *payload = consumeBuffer.data() + prePadding;
-        memcpy(payload, data, length);
+        // Reconstruct only the incomplete header. Copying the whole next read
+        // here used to retain a 64 KiB allocation on each affected connection.
+        const unsigned char marker = (state.spillLength >= 2
+            ? state.spill[1] : static_cast<unsigned char>(data[0])) & 0x7f;
+        const size_t headerLength = marker < 126
+            ? WebSocketProtocol::SHORT_MESSAGE_HEADER
+            : marker == 126 ? WebSocketProtocol::MEDIUM_MESSAGE_HEADER
+                            : WebSocketProtocol::LONG_MESSAGE_HEADER;
+        const size_t copied = std::min(length, headerLength - state.spillLength);
+        char *header = headerBuffer.data() + WebSocketProtocol::CONSUME_PRE_PADDING;
+        memcpy(header, data, copied);
         WebSocketProtocol::consume(
-            payload, static_cast<unsigned int>(length), this, protocolHooks);
+            header, static_cast<unsigned int>(copied), this, protocolHooks);
+        if (!closing && copied < length) {
+            WebSocketProtocol::consume(
+                data + copied, static_cast<unsigned int>(length - copied), this, protocolHooks);
+        }
     } else {
         WebSocketProtocol::consume(
             data, static_cast<unsigned int>(length), this, protocolHooks);
     }
     return events;
+}
+
+void StreamWebSocket::releaseEvents() {
+    events.clear();
+    if (events.capacity() > EVENT_RETAIN_LIMIT) {
+        std::vector<StreamWebSocketEvent>().swap(events);
+    }
 }
 
 bool StreamWebSocket::createFrame(const char *data,

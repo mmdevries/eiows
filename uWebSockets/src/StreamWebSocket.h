@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <memory>
 #include <string>
 #include <vector>
@@ -54,6 +55,7 @@ class CompressionContext {
     bool ensureInflater();
     bool ensureDeflater(int windowBits);
     bool resetInflater();
+    bool restartInflater();
     bool resetDeflater();
 
 public:
@@ -92,7 +94,8 @@ class StreamWebSocket : public WebSocketState {
     CompressionStatus compressionStatus;
     std::string fragmentBuffer;
     unsigned char controlTipLength = 0;
-    std::vector<char> consumeBuffer;
+    std::array<char, WebSocketProtocol::CONSUME_PRE_PADDING +
+        WebSocketProtocol::LONG_MESSAGE_HEADER> headerBuffer;
     std::vector<StreamWebSocketEvent> events;
     std::shared_ptr<CompressionContext> sharedCompressionContext;
     std::unique_ptr<CompressionContext> privateCompressionContext;
@@ -131,6 +134,8 @@ public:
     StreamWebSocket &operator=(const StreamWebSocket &) = delete;
 
     std::vector<StreamWebSocketEvent> &consume(char *data, size_t length);
+    // Call only after all borrowed event payloads have been dispatched/copied.
+    void releaseEvents();
     bool createFrame(const char *data,
                      size_t length,
                      OpCode opCode,

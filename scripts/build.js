@@ -1,10 +1,11 @@
 'use strict';
 
-const { createHash } = require('node:crypto');
-const { copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync,
-    renameSync, rmSync, statSync, writeFileSync, mkdtempSync } = require('node:fs');
+const { createHash, randomBytes } = require('node:crypto');
+const { copyFileSync, createReadStream, createWriteStream, existsSync, lstatSync,
+    mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync,
+    mkdtempSync } = require('node:fs');
 const { get } = require('node:https');
-const { homedir, tmpdir } = require('node:os');
+const { homedir, hostname, tmpdir } = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { pipeline } = require('node:stream/promises');
@@ -66,8 +67,10 @@ async function downloadFile(url, destination) {
     }
 }
 
-function sha256(filename) {
-    return createHash('sha256').update(readFileSync(filename)).digest('hex');
+async function sha256(filename) {
+    const hash = createHash('sha256');
+    for await (const chunk of createReadStream(filename)) hash.update(chunk);
+    return hash.digest('hex');
 }
 
 function sourceVersion(sourceDirectory) {
@@ -94,28 +97,115 @@ function validateSource(sourceDirectory) {
         sourceVersion(sourceDirectory) === nodeVersion;
 }
 
-async function acquireCacheLock(lockDirectory) {
-    const deadline = Date.now() + 120000;
-    for (;;) {
+function inspectCacheLock(lockDirectory) {
+    try {
+        const stat = lstatSync(lockDirectory);
+        if (!stat.isDirectory()) return { owner: null };
+        let owner;
         try {
-            mkdirSync(lockDirectory);
-            return () => rmSync(lockDirectory, { recursive: true, force: true });
+            owner = JSON.parse(readFileSync(path.join(lockDirectory, 'owner.json'), 'utf8'));
         } catch (error) {
-            if (!error || error.code !== 'EEXIST') throw error;
-            try {
-                if (Date.now() - statSync(lockDirectory).mtimeMs > 10 * 60 * 1000) {
-                    rmSync(lockDirectory, { recursive: true, force: true });
-                    continue;
+            if (error instanceof SyntaxError || error.code === 'ENOENT') return { owner: null };
+            throw error;
+        }
+        if (!owner || !Number.isSafeInteger(owner.pid) || owner.pid <= 0 ||
+            typeof owner.hostname !== 'string' ||
+            typeof owner.token !== 'string' || !/^[a-f0-9]{32}$/.test(owner.token)) {
+            return { owner: null };
+        }
+        return { owner };
+    } catch (error) {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+    }
+}
+
+function cacheLockOwnerIsAlive(owner) {
+    // A cache may be shared between hosts. A local PID cannot establish that a
+    // process on another host has exited. Reused PIDs are also kept safely locked.
+    if (owner.hostname !== hostname()) return true;
+    try {
+        process.kill(owner.pid, 0);
+        return true;
+    } catch (error) {
+        if (error.code === 'ESRCH') return false;
+        if (error.code === 'EPERM') return true;
+        throw error;
+    }
+}
+
+function recoverCacheLock(lockDirectory, owner) {
+    const current = inspectCacheLock(lockDirectory);
+    if (!current || !current.owner || current.owner.token !== owner.token ||
+        cacheLockOwnerIsAlive(current.owner)) return false;
+    // Keep the recovered directory as a nonempty tombstone. Every reclaimer of
+    // this token uses the same destination, so a delayed competing reclaimer
+    // cannot rename a newly acquired lock over it (rename refuses nonempty dirs).
+    const recovered = `${lockDirectory}.recovered-${owner.token}`;
+    try {
+        renameSync(lockDirectory, recovered);
+        return true;
+    } catch (error) {
+        if (['ENOENT', 'EEXIST', 'ENOTEMPTY', 'ENOTDIR', 'EISDIR'].includes(error.code)) {
+            return false;
+        }
+        throw error;
+    }
+}
+
+async function acquireCacheLock(lockDirectory, { timeoutMs = 120000, retryDelayMs } = {}) {
+    const deadline = Date.now() + timeoutMs;
+    const owner = {
+        pid: process.pid,
+        hostname: hostname(),
+        token: randomBytes(16).toString('hex')
+    };
+    // Publish a fully populated directory atomically. There is no interval in
+    // which a new lock exists without its owner metadata.
+    const prepared = mkdtempSync(path.join(path.dirname(lockDirectory),
+        `.${path.basename(lockDirectory)}-`));
+    try {
+        writeFileSync(path.join(prepared, 'owner.json'), JSON.stringify(owner), { mode: 0o600 });
+        for (;;) {
+            const current = inspectCacheLock(lockDirectory);
+            if (!current) {
+                try {
+                    renameSync(prepared, lockDirectory);
+                    let released = false;
+                    return () => {
+                        if (released) return;
+                        released = true;
+                        const locked = inspectCacheLock(lockDirectory);
+                        if (locked && locked.owner && locked.owner.token === owner.token) {
+                            // Remove the public path atomically before cleanup;
+                            // recursive removal in place would briefly expose an
+                            // empty directory that another rename could replace.
+                            const retired = `${lockDirectory}.released-${owner.token}`;
+                            renameSync(lockDirectory, retired);
+                            rmSync(retired, { recursive: true, force: true });
+                        }
+                    };
+                } catch (error) {
+                    if (!['EEXIST', 'ENOTEMPTY', 'ENOTDIR', 'EISDIR'].includes(error.code)) {
+                        throw error;
+                    }
                 }
-            } catch (statError) {
-                if (!statError || statError.code !== 'ENOENT') throw statError;
+            } else if (current.owner && recoverCacheLock(lockDirectory, current.owner)) {
                 continue;
             }
             if (Date.now() >= deadline) {
-                throw new Error(`timed out waiting for source cache lock ${lockDirectory}`);
+                const detail = current && !current.owner
+                    ? '; owner metadata is missing or invalid; check for a legacy installer before removing the lock'
+                    : '';
+                throw new Error(`timed out waiting for source cache lock ${lockDirectory}${detail}`);
             }
-            await delay(100 + Math.floor(Math.random() * 100));
+            const waitMs = retryDelayMs === undefined
+                ? 100 + Math.floor(Math.random() * 100)
+                : retryDelayMs;
+            await delay(Math.min(waitMs, Math.max(1, deadline - Date.now())));
         }
+    } finally {
+        rmSync(prepared, { recursive: true, force: true });
     }
 }
 
@@ -206,11 +296,13 @@ async function main() {
             expected = checksumLine.slice(0, 64);
         }
         if (!cached) {
-            if (!existsSync(archive) || !statSync(archive).isFile() ||
-                sha256(archive) !== expected) {
+            let actual = existsSync(archive) && statSync(archive).isFile()
+                ? await sha256(archive)
+                : null;
+            if (actual !== expected) {
                 await downloadFile(`${baseUrl}/${archiveName}`, archive);
+                actual = await sha256(archive);
             }
-            const actual = sha256(archive);
             if (actual !== expected) {
                 rmSync(archive, { force: true });
                 throw new Error(
@@ -242,7 +334,11 @@ async function main() {
     build(sourceDirectory);
 }
 
-main().catch((error) => {
-    console.error(error.stack || error);
-    process.exitCode = 1;
-});
+module.exports = { acquireCacheLock, recoverCacheLock, sha256 };
+
+if (require.main === module) {
+    main().catch((error) => {
+        console.error(error.stack || error);
+        process.exitCode = 1;
+    });
+}

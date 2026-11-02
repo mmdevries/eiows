@@ -90,6 +90,22 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  memory:
+    name: Node 24 / TCP and TLS memory churn
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SOAK_ROUNDS: 8
+      SOAK_CONNECTIONS: 24
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run test:soak
+
   freebsd:
     name: Node 24 / FreeBSD ${{ matrix.arch }}
     runs-on: ubuntu-24.04

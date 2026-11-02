@@ -2037,6 +2037,37 @@ test('applies maxBackpressure when native transport takeover is unavailable', as
     assert.equal(webSocket.readyState, eiows.CLOSED);
 });
 
+test('counts UTF-8 frame bytes at fallback backpressure boundaries', async () => {
+    for (const message of ['€€€', '😀😀', 'plain', Buffer.from([1, 2, 3])]) {
+        const frameBytes = Buffer.byteLength(message) + 2;
+        for (const queuedBytes of [0, 5]) {
+            for (const exceedsLimit of [false, true]) {
+                const limit = queuedBytes + frameBytes - Number(exceedsLimit);
+                const [session] = native.createSession(0, 1024, '');
+                const socket = new CapturingSocket();
+                socket.writableLength = queuedBytes;
+                const webSocket = new eiows.WebSocket(
+                    session, socket, null, false, 1024, '', '', true, limit);
+                const closed = new Promise((resolve) => webSocket.once('close', resolve));
+                try {
+                    const error = await new Promise((resolve) => webSocket.send(message, resolve));
+                    if (exceedsLimit) {
+                        assert.equal(error.code, 'EIOWS_MAX_BACKPRESSURE');
+                        assert.equal(socket.writes.length, 0);
+                    } else {
+                        assert.ifError(error);
+                        assert.equal(socket.writes.reduce(
+                            (bytes, part) => bytes + Buffer.byteLength(part), 0), frameBytes);
+                    }
+                } finally {
+                    webSocket.terminate();
+                    await closed;
+                }
+            }
+        }
+    }
+});
+
 test('defaults maxBackpressure to 64 MiB and supports an unlimited opt-out', async () => {
     const defaultServer = new eiows.Server({});
     const unlimitedServer = new eiows.Server({ maxBackpressure: 0 });

@@ -81,6 +81,27 @@ or
 
 yarn add eiows
 
+Validation
+----------
+
+From a repository checkout, run `npm test` for API, TCP/TLS transport, parser,
+compression and installer regressions, and `npm run test:fuzz` for valid-message
+round trips and malformed frames. These
+commands require a native build for the exact Node.js release being used.
+
+`npm run test:soak` exercises repeated connect/send/close cycles with both TCP
+and TLS, with compression enabled and disabled. Clients run in separate
+processes; each JSON line records server RSS, heap, external memory and file
+descriptor count after garbage collection. The test verifies complete payloads,
+released connections, bounded descriptor counts and bounded memory growth after
+warm-up. CI runs a short version; longer runs can be configured with
+`SOAK_ROUNDS=1000 SOAK_CONNECTIONS=100 npm run test:soak`.
+`SOAK_WARMUP_ROUNDS` controls warm-up cycles before the baseline (default: 5).
+`SOAK_MESSAGES`, `SOAK_PAYLOAD_BYTES` and `SOAK_MAX_RSS_GROWTH_MIB` control the
+messages per connection, payload size and permitted RSS/external growth
+(defaults: 4, 65536 bytes and 64 MiB). RSS is allocator-dependent; inspect the
+series as well as the threshold for production capacity planning.
+
 Examples:
 
     // ESM

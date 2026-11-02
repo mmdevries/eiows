@@ -42,7 +42,8 @@
     "pretest": "npm run test:types",
     "test:types": "tsc -p test/types/tsconfig.json",
     "test": "node --test test/*.test.js",
-    "test:fuzz": "node scripts/fuzz-websocket-parser.js"
+    "test:fuzz": "node scripts/fuzz-websocket-parser.js",
+    "test:soak": "node --expose-gc scripts/soak-memory.js"
   },
   "engines": {
     "node": "^22.9.0 || ^24.0.0 || ^26.0.0"

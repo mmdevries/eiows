@@ -501,9 +501,9 @@ napi_value consume(napi_env env, napi_callback_info info) {
     std::vector<eioWS::StreamWebSocketEvent> &events =
         handle->session->consume(input.data, input.length);
     struct ClearEventsOnReturn {
-        std::vector<eioWS::StreamWebSocketEvent> &events;
-        ~ClearEventsOnReturn() { events.clear(); }
-    } clearEventsOnReturn{events};
+        eioWS::StreamWebSocket *session;
+        ~ClearEventsOnReturn() { session->releaseEvents(); }
+    } clearEventsOnReturn{handle->session.get()};
 
     napi_value result = nullptr;
     if (!checkStatus(env,
